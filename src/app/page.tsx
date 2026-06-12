@@ -70,7 +70,7 @@ export default async function ProgrammeCover() {
     <div>
       {/* Edition data — date, price, edition number */}
       <p className="overline">
-        MATCHDAY PROGRAMME · VOL. I · {issued} · PRICE: SIXPENCE
+        MATCHDAY PROGRAMME · VOL. I · {issued}
       </p>
 
       {/* Event title — the one ROAR moment on the page */}

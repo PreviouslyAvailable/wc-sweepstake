@@ -43,8 +43,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </div>
               {/* Annotation — patent-office colophon */}
               <div className="mono text-right" style={{ fontSize: "0.58rem", letterSpacing: "0.1em", color: "var(--cream-30)" }}>
-                <div>FIG. 1 — 38 TEAMS · TWO HATS</div>
-                <div style={{ color: "var(--yellow)" }}>PRICE: SIXPENCE</div>
+                <div>38 NATIONS · MATCHKIT · ONE POT</div>
+                <div style={{ color: "var(--yellow)" }}>A PREVIOUSLY UNAVAILABLE RECORD</div>
               </div>
             </div>
           </div>
@@ -63,7 +63,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <footer style={{ borderTop: "1px solid var(--rule)" }}>
           <div className="mx-auto max-w-5xl px-4 py-5 flex flex-wrap justify-between gap-4">
             <p className="mono" style={{ fontSize: "0.6rem", color: "var(--dim)", letterSpacing: "0.06em" }}>
-              {today} · PRICE: SIXPENCE · VOL. I · A PREVIOUSLY UNAVAILABLE RECORD
+              {today} · VOL. I · A PREVIOUSLY UNAVAILABLE RECORD
             </p>
             <p className="mono" style={{ fontSize: "0.6rem", color: "var(--dim)", letterSpacing: "0.05em" }}>
               GOAL +1 · CLEAN SHEET +3 · YELLOW +1 · STRAIGHT RED +3 · GIANT-KILLING +1 PER 10 RANKS
