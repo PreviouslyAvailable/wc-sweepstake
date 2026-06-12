@@ -1,0 +1,720 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════
+   SIXPENCE — Terrace Modernism v1.3.0
+   The Beautiful Game, Officially Documented.
+   One stock. One to three inks. No gradients.
+   Spec: docs/SIXPENCE.md
+   ═══════════════════════════════════════════════════ */
+
+:root {
+  /* ── Stocks (what you print on) ────────────────── */
+  --cream:     #F1EAD8;  /* sixpence_cream    — default paper           */
+  --vermilion: #C8402F;  /* vermilion_stock   — special issue paper;
+                            print only with patent_black + cream;
+                            NEVER alongside whistle_red                  */
+
+  /* ── Inks (what you print with) ────────────────── */
+  --black:    #141414;   /* patent_black      — official ink / night paper */
+  --halftone: #2B2B28;   /* halftone_ink      — duotone photographic dark  */
+  --indigo:   #3D3A8C;   /* programme_indigo  — heritage blue, ARCHIVE only */
+  --green:    #2E8B47;   /* programme_green   — heritage green, ARCHIVE    */
+  --pitch:    #3FAE4A;   /* pitch_green       — ARCADE only                */
+  --blue:     #2038C7;   /* club_blue         — ROAR / ARCADE              */
+  --yellow:   #FFD900;   /* signal_yellow     — ROAR / ARCADE accent       */
+  --red:      #E0103A;   /* whistle_red       — ONE element per artefact   */
+
+  /* ── ROAR surfaces (dark register tokenised) ─── */
+  --surface-raised: #1C1C1C;
+  --surface-sunken: #161616;
+
+  /* ── Cream opacity scale (dark-bg usage) ──────── */
+  --cream-06: rgba(241, 234, 216, 0.06);
+  --cream-10: rgba(241, 234, 216, 0.10);
+  --cream-18: rgba(241, 234, 216, 0.18);
+  --cream-30: rgba(241, 234, 216, 0.30);
+  --cream-50: rgba(241, 234, 216, 0.50);
+
+  /* ── Semantic aliases — night paper edition ────
+     The whole archive now prints on patent_black_ground
+     ("chalkboard and floodlit scoreboard"). Inks on this
+     stock: sixpence_cream · signal_yellow · whistle_red. */
+  --dim:  rgba(241, 234, 216, 0.48);   /* secondary text on night paper */
+  --rule: rgba(241, 234, 216, 0.14);   /* hairline dividers             */
+}
+
+/* ── Paper grain — warm fibre noise on all grounds ─
+   3–5% opacity; appears as subtle texture on cream,
+   as studio noise on dark. Nothing is clinically flat.  */
+html::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.038;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 200px 200px;
+}
+
+/* Ground — night paper: the floodlit scoreboard */
+html { background: var(--black); }
+
+body {
+  color: var(--cream);
+  font-family: "Archivo", system-ui, sans-serif;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+/* ── Typography ──────────────────────────────────── */
+
+.display {
+  font-family: "Instrument Serif", Georgia, "Times New Roman", serif;
+  letter-spacing: -0.01em;
+}
+
+.compressed {
+  font-family: "Anton", "Archivo Black", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  line-height: 0.88;   /* negative leading for stacked compressed */
+}
+
+.mono {
+  font-family: "IBM Plex Mono", "Courier New", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Italic Intruder ─────────────────────────────────
+   One slanted letter inside an otherwise roman headline.
+   Anton has no true italic — skewX(-8deg) is the
+   deliberate synthetic version.                         */
+.intruder {
+  display: inline-block;
+  font-style: italic;       /* serif display — true italic */
+}
+.compressed .intruder,
+.intruder.synth {
+  font-style: normal;
+  transform: skewX(-8deg); /* compressed grotesque — synthetic */
+}
+
+/* ── Rules — the only divider style ─────────────── */
+
+.rule       { border: none; border-top: 1px solid var(--cream); }
+.rule-faint { border: none; border-top: 1px solid var(--rule); }
+
+/* ── Buttons — scoreboard plates ─────────────────── */
+
+.btn {
+  background: var(--cream);
+  color: var(--black);
+  font-family: "Archivo", sans-serif;
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.55rem 1.2rem;
+  border: 1px solid var(--cream);
+  border-radius: 0;
+  cursor: pointer;
+  display: inline-block;
+  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+}
+.btn:hover    { background: var(--yellow); border-color: var(--yellow); }
+.btn:active   { opacity: 0.8; }
+.btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.btn-quiet {
+  background: transparent;
+  color: var(--cream);
+  border: 1px solid var(--cream-18);
+  border-radius: 0;
+  font-family: "Archivo", sans-serif;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.55rem 1.2rem;
+  cursor: pointer;
+  transition: border-color 0.1s ease;
+}
+.btn-quiet:hover { border-color: var(--cream); }
+
+/* ── Fields ──────────────────────────────────────── */
+
+.field {
+  background: var(--surface-sunken);
+  border: 1px solid var(--cream-30);
+  border-radius: 0;
+  color: var(--cream);
+  font-family: "Archivo", sans-serif;
+  padding: 0.45rem 0.65rem;
+}
+.field:focus-visible    { outline: 2px solid var(--yellow); outline-offset: 0; }
+.field option,
+.field optgroup         { background: var(--surface-sunken); color: var(--cream); }
+.field::placeholder     { color: var(--cream-30); }
+
+/* ── Stub — raffle ticket on night paper ─────────── */
+
+.stub {
+  position: relative;
+  background: var(--surface-raised);
+  color: var(--cream);
+  border: 1px solid var(--cream-30);
+  border-radius: 0;
+  padding: 0.45rem 0.7rem 0.45rem 1.2rem;
+}
+.stub::before {
+  content: "";
+  position: absolute;
+  left: 0.6rem;
+  top: 4px;
+  bottom: 4px;
+  border-left: 1px dashed var(--cream-30);
+}
+.stub.out            { opacity: 0.38; }
+.stub.out .stub-name { text-decoration: line-through; }
+
+/* ── Stamp entrance — press impression ──────────────
+   Arrives instantly. Slight overshoot (1.02→1.00).
+   The system motion vocabulary: not a UI slide-in.    */
+@keyframes stamp {
+  0%   { opacity: 0; transform: scale(1.02); }
+  55%  { opacity: 1; transform: scale(1.02); }
+  100% { opacity: 1; transform: scale(1.00); }
+}
+.stamp   { animation: stamp 0.08s ease both; }
+.deal-in { animation: stamp 0.08s ease both; } /* legacy alias */
+
+/* ── Perimeter Chant ─────────────────────────────────
+   Text repeating edge-to-edge on all four sides.
+   Ticker loops at constant speed — never resolves.    */
+@keyframes chant-h {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+@keyframes chant-v {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-50%); }
+}
+.chant-h         { animation: chant-h 28s linear infinite; white-space: nowrap; }
+.chant-h.reverse { animation-direction: reverse; }
+.chant-v         { animation: chant-v 20s linear infinite; white-space: nowrap; }
+.chant-v.reverse { animation-direction: reverse; }
+
+/* ── Overline — mono filing label above a heading ── */
+.overline {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+/* ── Index rows — the ladder as an archive index ─── */
+.index-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 1rem;
+  border-bottom: 1px solid var(--rule);
+  padding: 0.75rem 0;
+}
+.index-num {
+  font-family: "IBM Plex Mono", monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.95rem;
+  width: 2.2rem;
+  color: var(--dim);
+}
+
+/* ── Stamp mark — issue/ageing annotation ────────────
+   A small bordered chip, set slightly off-true like a
+   hand stamp. The rotation is the loose axis.          */
+.stamp-mark {
+  display: inline-block;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.52rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border: 1px solid currentColor;
+  padding: 0.1em 0.45em;
+  transform: rotate(-3deg);
+  border-radius: 0;
+}
+.stamp-mark.true-up { transform: rotate(2deg); }
+
+/* ── Loose hand — deterministic variation ────────────
+   The free axis the spec demands: artefacts in a set
+   must not photocopy identically. Tilts are assigned
+   by index, never randomly (SSR-safe), and stay small
+   enough to read as hand-placement, not error.        */
+.tilt-0 { transform: rotate(-3deg); }
+.tilt-1 { transform: rotate(1.5deg); }
+.tilt-2 { transform: rotate(-1.5deg); }
+.tilt-3 { transform: rotate(2.5deg); }
+
+.lean-0 { transform: rotate(-0.35deg); }
+.lean-1 { transform: rotate(0.3deg); }
+.lean-2 { transform: rotate(0.15deg); }
+.lean-3 { transform: rotate(-0.2deg); }
+
+/* ── Profile card — holder card on night paper ──────
+   Cream nameplate plate, body of ticket stubs,
+   mini-colophon. Scoreboard plate logic.              */
+.profile-card {
+  border: 1px solid var(--cream-30);
+  background: var(--surface-raised);
+  display: flex;
+  flex-direction: column;
+}
+.nameplate {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: var(--cream);
+  color: var(--black);
+  padding: 0.45rem 0.7rem;
+}
+.nameplate-name {
+  font-family: "Anton", "Archivo Black", sans-serif;
+  font-weight: 400;
+  font-size: 1rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.card-no {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.55rem;
+  letter-spacing: 0.1em;
+  color: rgba(20, 20, 20, 0.55);
+  white-space: nowrap;
+}
+.profile-card-body { padding: 0.7rem; flex: 1; }
+.card-colophon {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-top: 1px solid var(--rule);
+  padding: 0.4rem 0.7rem;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.55rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+/* ── Ruled box — annotation field with filed label ── */
+.ruled-box {
+  border: 1px solid var(--rule);
+  padding: 1.1rem 1.2rem;
+}
+.ruled-box-label {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.55rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cream-50);
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+/* ── Empty slot — absence, visualised (missing album slot) ── */
+.empty-slot {
+  border: 1px dashed var(--cream-30);
+  padding: 3rem 2rem;
+  text-align: center;
+}
+
+/* ── Ticket number — issued serial on draw stubs ──── */
+.ticket-no {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.5rem;
+  letter-spacing: 0.1em;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+/* ── Masthead — floodlit scoreboard header ────────── */
+.masthead {
+  border-bottom: 1px solid var(--cream-18);
+}
+.masthead-band {
+  border-bottom: 1px solid var(--cream-10);
+}
+.wordmark {
+  font-family: "Anton", "Archivo Black", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 0.9;
+  color: var(--cream);
+}
+
+/* ── Nav tabs — index dividers, scoreboard volume ── */
+.nav-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.7rem 1.1rem;
+  border-right: 1px solid var(--cream-10);
+  border-bottom: 2px solid transparent;
+  font-family: "Archivo", sans-serif;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cream-50);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 0.1s ease, border-color 0.1s ease;
+}
+.nav-tab:hover { color: var(--cream); }
+.nav-tab.is-active {
+  color: var(--yellow);
+  border-bottom-color: var(--yellow);
+}
+
+/* Record dot — the live broadcast device.
+   THE one whistle_red element of the chrome. */
+.rec-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;     /* sanctioned exception: status dot */
+  background: var(--red);
+  animation: live-pulse 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+/* ── Focus rings ─────────────────────────────────── */
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--yellow);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stamp, .deal-in { animation: none; opacity: 1; transform: none; }
+  .chant-h, .chant-v { animation: none; }
+  html::before { display: none; }
+}
+
+/* ═══════════════════════════════════════════════════
+   LIVE SCORES — ROAR register
+   Inks: patent_black · sixpence_cream · signal_yellow
+   whistle_red reserved for the live dot — one use only.
+   ═══════════════════════════════════════════════════ */
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.1; }
+}
+
+/* Full-bleed black backdrop */
+.live-page {
+  background: var(--black);
+  margin: -2rem -1rem;
+  padding: 3rem 1.5rem 5rem;
+  min-height: calc(100vh - 65px);
+  color: var(--cream);
+}
+
+/* ── Live dot — whistle_red ───────────────────────
+   THE ONE RED ELEMENT on the live page.
+   "Used the way a whistle is used — seldom,
+    and it stops everything."                        */
+.live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--red);
+  animation: live-pulse 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+/* ── Perimeter Chant container ───────────────────── */
+.perimeter-wrap {
+  position: relative;
+  overflow: hidden;
+}
+
+.chant-edge {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.chant-edge-top    { top: 0; left: 0; right: 0; height: 14px; }
+.chant-edge-bottom { bottom: 0; left: 0; right: 0; height: 14px; }
+.chant-edge-left   { left: 0; top: 0; bottom: 0; width: 14px; display: flex; align-items: flex-start; }
+.chant-edge-right  { right: 0; top: 0; bottom: 0; width: 14px; display: flex; align-items: flex-start; }
+
+.chant-text {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.5rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cream-18);
+  line-height: 1;
+  padding-top: 2px;
+}
+
+/* ── Match card ───────────────────────────────────── */
+
+.match-card {
+  background: var(--surface-raised);
+  border: 1px solid var(--cream-10);
+  border-radius: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.2s ease;
+}
+
+/* is-live: signal_yellow accent — not whistle_red */
+.match-card.is-live {
+  border-color: rgba(255, 217, 0, 0.3);
+}
+
+.match-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.55rem 0.85rem;
+  border-bottom: 1px solid var(--cream-10);
+  background: var(--surface-sunken);
+}
+
+.round-label {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cream-30);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 12rem;
+}
+
+/* ── Status badge ─────────────────────────────────── */
+
+.status-badge {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.55rem;
+  border-radius: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--cream-06);
+  color: var(--cream-30);
+  border: 1px solid var(--cream-10);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* is-live badge uses yellow — red is taken by the dot */
+.status-badge.is-live {
+  background: rgba(255, 217, 0, 0.1);
+  color: var(--yellow);
+  border-color: rgba(255, 217, 0, 0.25);
+}
+
+.status-badge.is-ft {
+  color: var(--cream-18);
+  border-color: var(--cream-06);
+}
+
+/* ── Body: team — score — team ───────────────────── */
+
+.match-card-body {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.1rem 0.85rem;
+}
+
+.match-team { display: flex; flex-direction: column; gap: 0.18rem; }
+.match-team.away { align-items: flex-end; text-align: right; }
+
+.match-team-flag { font-size: 1.85rem; line-height: 1; margin-bottom: 0.25rem; }
+
+.match-team-name {
+  font-family: "Anton", "Archivo Black", sans-serif;
+  font-size: 0.88rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  color: var(--cream);
+}
+
+.match-team-rank {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.58rem;
+  color: var(--cream-30);
+  letter-spacing: 0.06em;
+}
+
+.match-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  padding: 0 0.45rem;
+}
+
+.match-score-num {
+  font-family: "Anton", "Archivo Black", sans-serif;
+  font-size: 2.4rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--yellow);
+  min-width: 1.6ch;
+  text-align: center;
+  transition: opacity 0.2s ease;
+}
+
+/* Finished: cream scores, not yellow */
+.match-card:not(.is-live) .match-score-num:not(.dim) { color: var(--cream); }
+.match-score-num.dim { color: var(--cream-18); }
+
+.match-score-sep {
+  color: var(--cream-18);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 1rem;
+  margin: 0 0.05rem;
+}
+
+.match-kickoff-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0;
+}
+
+.match-kickoff-time {
+  font-family: "Anton", sans-serif;
+  font-size: 1.2rem;
+  letter-spacing: 0.04em;
+  color: var(--cream-50);
+}
+
+.match-kickoff-vs {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.56rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cream-30);
+}
+
+/* ── Footer: owners + pts ────────────────────────── */
+
+.match-card-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.85rem;
+  border-top: 1px solid var(--cream-10);
+  background: var(--surface-sunken);
+  gap: 0.5rem;
+  min-height: 2.3rem;
+}
+
+.owner-pill {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.63rem;
+  padding: 0.12rem 0.5rem;
+  border-radius: 0;
+  border: 1px solid var(--cream-18);
+  background: transparent;
+  color: var(--cream-50);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 9rem;
+  display: inline-block;
+  letter-spacing: 0.04em;
+}
+
+/* pts in signal_yellow — scoreboard register, not programme_green */
+.pts-preview {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--yellow);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+  letter-spacing: 0.04em;
+}
+
+/* ── Section headers ─────────────────────────────── */
+
+.live-section + .live-section { margin-top: 3rem; }
+
+.live-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--cream-10);
+  padding-bottom: 0.6rem;
+}
+
+.live-section-title {
+  font-family: "Anton", sans-serif;
+  font-size: 2.2rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--cream);
+  line-height: 0.88;
+  white-space: nowrap;
+}
+
+.live-section-title.is-active { color: var(--yellow); }
+
+.live-section-count {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.6rem;
+  color: var(--cream-30);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* ── Match grid — hairline 1px rules as dividers ─── */
+
+.matches-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(285px, 1fr));
+  gap: 1px;
+  background: var(--cream-10);
+  border: 1px solid var(--cream-10);
+}
+
+.matches-grid > .match-card { border: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot        { animation: none; }
+  .rec-dot         { animation: none; }
+  .match-score-num { transition: none; }
+  .match-card      { transition: none; }
+}
