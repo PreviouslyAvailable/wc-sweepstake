@@ -1,7 +1,7 @@
 import Link from "next/link";
+import FixtureSheet from "@/components/FixtureSheet";
 import { supaAnon } from "@/lib/supabase";
 import { buildUpcomingHolderFixtures } from "@/lib/holder-fixtures";
-import { fmtFixtureNzstDate, fmtFixtureNzstTime } from "@/lib/match-dates";
 import {
   computeStandings,
   Participant,
@@ -146,57 +146,10 @@ export default async function ProgrammeCover() {
               <h2 className="display text-2xl" style={{ marginBottom: "0.75rem" }}>
                 Coming <span className="intruder">u</span>p
               </h2>
-              {upcomingFixtures.length > 0 ? (
-                <ol className="fixture-sheet">
-                  {upcomingFixtures.map((row, i) => (
-                    <li key={row.fixtureId} className="fixture-sheet-row">
-                      <span className="fixture-sheet-num mono">
-                        {String(i + 1).padStart(2, "0")}
-                      </span>
-                      <span className="fixture-sheet-when mono tabular-nums">
-                        {row.isLive
-                          ? "LIVE"
-                          : `${fmtFixtureNzstDate(row.startTimestamp)} · ${fmtFixtureNzstTime(row.startTimestamp)}`}
-                      </span>
-                      <span className="fixture-sheet-match">
-                        <span className="fixture-sheet-side">
-                          <span>{row.home.team.flag}</span>
-                          <span>
-                            {row.home.holder ? (
-                              <><span className="fixture-sheet-holder">{row.home.holder}</span>
-                              <span className="fixture-sheet-team"> · {row.home.team.name}</span></>
-                            ) : (
-                              row.home.team.name
-                            )}
-                          </span>
-                        </span>
-                        <span className="fixture-sheet-vs mono">vs</span>
-                        <span className="fixture-sheet-side">
-                          <span>{row.away.team.flag}</span>
-                          <span>
-                            {row.away.holder ? (
-                              <><span className="fixture-sheet-holder">{row.away.holder}</span>
-                              <span className="fixture-sheet-team"> · {row.away.team.name}</span></>
-                            ) : (
-                              row.away.team.name
-                            )}
-                          </span>
-                        </span>
-                      </span>
-                    </li>
-                  ))}
-                </ol>
-              ) : (
-                <p className="mono text-xs" style={{ color: "var(--dim)", letterSpacing: "0.06em" }}>
-                  No holder fixtures on the sheet in the next fortnight.
-                </p>
-              )}
-              <p className="mono mt-4 text-xs" style={{ color: "var(--dim)", letterSpacing: "0.06em" }}>
-                FIG. 2 — ORDERED BY KICKOFF · NZST ·{" "}
-                <Link href="/live" className="underline" style={{ color: "var(--cream)" }}>
-                  Full scoreboard
-                </Link>
-              </p>
+              <FixtureSheet
+                fixtures={upcomingFixtures}
+                holders={participants.map((p) => p.name).sort((a, b) => a.localeCompare(b))}
+              />
             </section>
           )}
 

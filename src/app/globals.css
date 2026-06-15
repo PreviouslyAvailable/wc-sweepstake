@@ -319,6 +319,23 @@ body {
 }
 
 /* ── Programme fixture sheet ───────────────────────── */
+.fixture-sheet-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.85rem;
+}
+.fixture-sheet-filter-label {
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.fixture-sheet-select {
+  min-width: 10rem;
+  font-size: 0.75rem;
+}
 .fixture-sheet {
   list-style: none;
   margin: 0;
