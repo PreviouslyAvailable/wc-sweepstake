@@ -2,10 +2,23 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
+import dynamic from "next/dynamic";
+import { buildDealOrder } from "@/lib/draw-order";
+import type { DrawAssignment, DrawPerson, DrawTeam } from "@/lib/draw-order";
 
-interface P { id: string; name: string }
-interface T { id: string; name: string; flag: string; band: string; world_rank: number }
-interface A { participant_id: string; team_id: string; position: number }
+const DrawRevealOverlay = dynamic(
+  () =>
+    import("@/components/draw-reveal/DrawRevealOverlay")
+      .then((m) => m.DrawRevealOverlay)
+      .catch(() => {
+        function DrawRevealFallback() {
+          return null;
+        }
+        return DrawRevealFallback;
+      }),
+  { ssr: false }
+);
+
 interface ArchiveTicket { holder: string; team_id: string; position: number }
 interface Edition { archived_at: string; reason: string; tickets: ArchiveTicket[] }
 
@@ -19,32 +32,40 @@ function supa() {
 export default function DrawPage() {
   const [admin, setAdmin] = useState(false);
   const [passcode, setPasscode] = useState("");
-  const [people, setPeople] = useState<P[]>([]);
-  const [teams, setTeams] = useState<T[]>([]);
-  const [assignments, setAssignments] = useState<A[]>([]);
+  const [people, setPeople] = useState<DrawPerson[]>([]);
+  const [teams, setTeams] = useState<DrawTeam[]>([]);
+  const [assignments, setAssignments] = useState<DrawAssignment[]>([]);
   const [locked, setLocked] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [revealed, setRevealed] = useState(0);
   const [editions, setEditions] = useState<Edition[]>([]);
+  const [participantOrder, setParticipantOrder] = useState<string[]>([]);
+  const [showReveal, setShowReveal] = useState(false);
+  const [hideGridDuringReveal, setHideGridDuringReveal] = useState(false);
 
   const load = useCallback(async () => {
     const db = supa();
-    const [p, t, a, s, ar, auth] = await Promise.all([
-      db.from("participants").select("id,name").order("created_at"),
-      db.from("teams").select("id,name,flag,band,world_rank"),
-      db.from("assignments").select("participant_id,team_id,position"),
-      db.from("settings").select("value").eq("key", "draw_locked").single(),
-      db.from("settings").select("value").eq("key", "draw_archive").single(),
-      fetch("/api/login").then((r) => r.json()),
-    ]);
-    setPeople((p.data ?? []) as P[]);
-    setTeams((t.data ?? []) as T[]);
-    setAssignments((a.data ?? []) as A[]);
-    setLocked(s.data?.value === true);
-    setEditions(Array.isArray(ar.data?.value) ? (ar.data.value as Edition[]) : []);
-    setAdmin(Boolean(auth.admin));
+    try {
+      const [p, t, a, s, ar, ro, auth] = await Promise.all([
+        db.from("participants").select("id,name").order("created_at"),
+        db.from("teams").select("id,name,flag,band,world_rank"),
+        db.from("assignments").select("participant_id,team_id,position"),
+        db.from("settings").select("value").eq("key", "draw_locked").maybeSingle(),
+        db.from("settings").select("value").eq("key", "draw_archive").maybeSingle(),
+        db.from("settings").select("value").eq("key", "draw_reveal_order").maybeSingle(),
+        fetch("/api/login").then((r) => r.json()),
+      ]);
+      setPeople((p.data ?? []) as DrawPerson[]);
+      setTeams((t.data ?? []) as DrawTeam[]);
+      setAssignments((a.data ?? []) as DrawAssignment[]);
+      setLocked(s.data?.value === true);
+      setEditions(Array.isArray(ar.data?.value) ? (ar.data.value as Edition[]) : []);
+      setParticipantOrder(Array.isArray(ro.data?.value) ? (ro.data.value as string[]) : []);
+      setAdmin(Boolean(auth.admin));
+    } catch {
+      setError("Could not load the draw record. Refresh the page.");
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -95,7 +116,8 @@ export default function DrawPage() {
     const data = await res.json();
     setBusy(false);
     if (!res.ok) { setError(data.error); return; }
-    setRevealed(0);
+    setShowReveal(false);
+    setHideGridDuringReveal(false);
     await load();
   }
 
@@ -112,16 +134,17 @@ export default function DrawPage() {
     const data = await res.json();
     setBusy(false);
     if (!res.ok) { setError(data.error); return; }
+    if (Array.isArray(data.participantOrder)) {
+      setParticipantOrder(data.participantOrder);
+    }
     await load();
-    // Staggered reveal — Band A first, then Band B
-    setRevealed(0);
-    const total: number = data.dealt ?? needed * 2;
-    let i = 0;
-    const tick = setInterval(() => {
-      i += 1;
-      setRevealed(i);
-      if (i >= total) clearInterval(tick);
-    }, 120);
+    setHideGridDuringReveal(true);
+    setShowReveal(true);
+  }
+
+  function startReplay() {
+    setHideGridDuringReveal(true);
+    setShowReveal(true);
   }
 
   const teamById = new Map(teams.map((t) => [t.id, t]));
@@ -130,16 +153,9 @@ export default function DrawPage() {
   const teamsPerBand = Math.min(bandACount, bandBCount);
   const ready = people.length === teamsPerBand;
 
-  // Reveal order: Band A first (position 0), then Band B (position 1), within each by participant order
-  const dealOrder = [...assignments].sort(
-    (a, b) =>
-      a.position - b.position ||
-      people.findIndex((p) => p.id === a.participant_id) -
-        people.findIndex((p) => p.id === b.participant_id)
-  );
-  const shown = locked ? (revealed > 0 ? dealOrder.slice(0, revealed) : dealOrder) : [];
+  const dealOrder = buildDealOrder(assignments, people);
+  const shown = locked && !hideGridDuringReveal ? dealOrder : [];
 
-  // Ticket serials follow issuance order — true numbering, not decoration
   const ticketNo = new Map(dealOrder.map((a, i) => [a.team_id, i + 1]));
 
   return (
@@ -254,25 +270,30 @@ export default function DrawPage() {
 
       {locked && (
         <div className="mt-8">
-          {admin && (
+          <div className="mb-4 flex flex-wrap gap-3">
             <button
-              className="btn mb-4 text-sm"
-              onClick={resetDraw}
-              disabled={busy}
-              style={{ color: "var(--red)" }}
+              type="button"
+              className="btn text-sm"
+              onClick={startReplay}
+              disabled={showReveal}
             >
-              {busy ? "Filing…" : "Retire the draw"}
+              Watch the reveal
             </button>
-          )}
+            {admin && (
+              <button
+                className="btn text-sm"
+                onClick={resetDraw}
+                disabled={busy}
+                style={{ color: "var(--red)" }}
+              >
+                {busy ? "Filing…" : "Retire the draw"}
+              </button>
+            )}
+          </div>
           <p className="text-sm" style={{ color: "var(--dim)" }}>
-            The draw is complete and locked.{" "}
-            {revealed > 0 && revealed < assignments.length ? "Dealing…" : "Every issued ticket is on record below."}
+            The draw is complete and locked. Every issued ticket is on record below.
           </p>
-          {/* Band A reveal */}
-          {shown.some((a) => {
-            const t = teamById.get(a.team_id);
-            return t?.band === "A";
-          }) && (
+          {shown.some((a) => teamById.get(a.team_id)?.band === "A") && (
             <div className="mt-6">
               <p className="mb-3 text-xs font-semibold uppercase" style={{ color: "var(--yellow)" }}>
                 Band A — Contenders
@@ -300,11 +321,7 @@ export default function DrawPage() {
               </ul>
             </div>
           )}
-          {/* Band B reveal */}
-          {shown.some((a) => {
-            const t = teamById.get(a.team_id);
-            return t?.band === "B";
-          }) && (
+          {shown.some((a) => teamById.get(a.team_id)?.band === "B") && (
             <div className="mt-6">
               <p className="mb-3 text-xs font-semibold uppercase" style={{ color: "var(--dim)" }}>
                 Band B — Wildcards
@@ -337,7 +354,6 @@ export default function DrawPage() {
 
       {error && <p className="mt-4 text-sm" style={{ color: "var(--red)" }}>{error}</p>}
 
-      {/* Past editions — retired draws stay on file, aged but never destroyed */}
       {editions.length > 0 && (
         <div className="mt-14">
           <p className="overline">
@@ -380,6 +396,23 @@ export default function DrawPage() {
             })}
           </div>
         </div>
+      )}
+
+      {showReveal && locked && assignments.length > 0 && (
+        <DrawRevealOverlay
+          assignments={assignments}
+          people={people}
+          teams={teams}
+          participantOrder={participantOrder}
+          onComplete={() => {
+            setShowReveal(false);
+            setHideGridDuringReveal(false);
+          }}
+          onExit={() => {
+            setShowReveal(false);
+            setHideGridDuringReveal(false);
+          }}
+        />
       )}
     </div>
   );

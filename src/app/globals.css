@@ -718,3 +718,405 @@ select:focus-visible {
   .match-score-num { transition: none; }
   .match-card      { transition: none; }
 }
+
+/* ═══════════════════════════════════════════════════
+   DRAW REVEAL — ARCADE register overlay
+   Inks: patent_black · sixpence_cream · signal_yellow
+   ═══════════════════════════════════════════════════ */
+
+.draw-reveal-root {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  pointer-events: none;
+}
+.draw-reveal-root.is-active { pointer-events: auto; }
+
+.draw-reveal-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: rgba(20, 20, 20, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.draw-reveal-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  box-shadow: inset 0 0 160px 60px rgba(0, 0, 0, 0.45);
+}
+
+.draw-reveal-chrome {
+  position: absolute;
+  top: 1.25rem;
+  left: 1.25rem;
+  right: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 10006;
+}
+
+.draw-reveal-progress {
+  font-size: 0.65rem;
+  letter-spacing: 0.14em;
+  color: var(--yellow);
+}
+
+.draw-reveal-skip {
+  background: transparent;
+  border: 1px solid var(--cream-30);
+  color: var(--cream-50);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+}
+.draw-reveal-skip:hover { color: var(--cream); border-color: var(--cream); }
+
+.draw-reveal-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  min-height: 100dvh;
+  padding: 4.5rem 1rem 1.5rem;
+  background: var(--surface-raised);
+  border: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.draw-reveal-content {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  text-align: center;
+  min-height: 0;
+  width: 100%;
+}
+
+.draw-reveal-content.is-name-only {
+  flex: 0 0 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.draw-reveal-content.has-cards {
+  flex: 1;
+}
+
+.draw-reveal-header {
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
+  width: 100%;
+  padding: 0 1rem 1rem;
+  border-bottom: 1px solid var(--cream-10);
+  text-align: center;
+}
+
+.draw-reveal-name-block {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  text-align: center;
+}
+
+.draw-reveal-name-block.is-hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 0 1rem;
+}
+
+.draw-reveal-name-block.is-docked {
+  flex-shrink: 0;
+  padding: 0 1rem 1rem;
+  border-bottom: 1px solid var(--cream-10);
+}
+
+.draw-reveal-name-text {
+  line-height: 0.88;
+  max-width: 100%;
+  word-break: break-word;
+  color: var(--cream);
+}
+
+.draw-reveal-name-block.is-hero .draw-reveal-name-text {
+  font-size: clamp(3rem, 12vw, 7rem);
+}
+
+.draw-reveal-name-block.is-docked .draw-reveal-name-text {
+  font-size: clamp(1.8rem, 5vw, 3.2rem);
+  color: var(--yellow);
+}
+
+.draw-reveal-shuffle {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.draw-reveal-hat {
+  position: relative;
+  width: min(520px, 86vw);
+  animation: draw-hat-shake 0.42s linear infinite;
+}
+
+.draw-reveal-hat-label {
+  text-align: center;
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--yellow);
+  margin-bottom: 0.75rem;
+}
+
+.draw-reveal-hat-rim {
+  height: 10px;
+  border: 1px solid var(--cream-30);
+  border-bottom: none;
+  background: var(--surface-sunken);
+}
+
+.draw-reveal-hat-body {
+  position: relative;
+  height: min(42dvh, 360px);
+  overflow: hidden;
+  border: 1px solid var(--cream-30);
+  border-top: 2px solid var(--yellow);
+  background: var(--black);
+  box-shadow: inset 0 0 0 1px var(--cream-10);
+}
+
+.draw-reveal-hat-name {
+  position: absolute;
+  padding: 0.35rem 0.85rem;
+  border: 1px solid var(--cream-30);
+  background: var(--surface-raised);
+  color: var(--cream);
+  font-family: "Archivo", sans-serif;
+  font-size: clamp(0.72rem, 2vw, 0.95rem);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.draw-reveal-hat-name-0 { animation: draw-hat-jostle-a 0.38s ease-in-out infinite; }
+.draw-reveal-hat-name-1 { animation: draw-hat-jostle-b 0.44s ease-in-out infinite; animation-delay: -0.12s; }
+.draw-reveal-hat-name-2 { animation: draw-hat-jostle-c 0.36s ease-in-out infinite; animation-delay: -0.22s; }
+.draw-reveal-hat-name-3 { animation: draw-hat-jostle-b 0.41s ease-in-out infinite; animation-delay: -0.08s; }
+.draw-reveal-hat-name-4 { animation: draw-hat-jostle-a 0.39s ease-in-out infinite; animation-delay: -0.18s; }
+
+@keyframes draw-hat-shake {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  12%      { transform: translate(-5px, 2px) rotate(-1.2deg); }
+  24%      { transform: translate(6px, -2px) rotate(1.4deg); }
+  36%      { transform: translate(-7px, 1px) rotate(-1.6deg); }
+  48%      { transform: translate(7px, 2px) rotate(1.5deg); }
+  60%      { transform: translate(-6px, -1px) rotate(-1.3deg); }
+  72%      { transform: translate(5px, 1px) rotate(1.1deg); }
+  84%      { transform: translate(-4px, -2px) rotate(-0.8deg); }
+}
+
+@keyframes draw-hat-jostle-a {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  25%      { transform: translate(-14px, -6px) rotate(-4deg); }
+  50%      { transform: translate(12px, 4px) rotate(3deg); }
+  75%      { transform: translate(-8px, 2px) rotate(-2deg); }
+}
+
+@keyframes draw-hat-jostle-b {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  25%      { transform: translate(16px, 5px) rotate(5deg); }
+  50%      { transform: translate(-10px, -4px) rotate(-3deg); }
+  75%      { transform: translate(8px, -2px) rotate(2deg); }
+}
+
+@keyframes draw-hat-jostle-c {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  33%      { transform: translate(-12px, 6px) rotate(-5deg); }
+  66%      { transform: translate(14px, -5px) rotate(4deg); }
+}
+
+.draw-reveal-phase {
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  color: var(--dim);
+  margin-bottom: 0.75rem;
+}
+
+.draw-reveal-cards {
+  flex: 1;
+  display: flex;
+  gap: clamp(0.75rem, 2vw, 1.75rem);
+  margin-top: 0;
+  padding: 0.75rem clamp(0.25rem, 1.5vw, 1.5rem) 0;
+  justify-content: center;
+  align-items: stretch;
+  min-height: 0;
+  width: 100%;
+}
+
+.draw-card-wrap {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  max-width: min(48vw, 640px);
+  height: min(62dvh, calc(96vw * 0.66));
+  max-height: 720px;
+  perspective: 1800px;
+}
+
+.draw-card-scene {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 1.6s cubic-bezier(0.45, 0.05, 0.2, 1);
+}
+.draw-card-scene.is-flipped { transform: rotateY(180deg); }
+
+.draw-card {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  border: 1px solid var(--cream-30);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1rem;
+}
+
+.draw-card-back {
+  background: var(--black);
+  color: var(--cream);
+  overflow: hidden;
+}
+
+.draw-card-mark {
+  font-size: clamp(1.8rem, 4.5vw, 3.5rem);
+  color: var(--yellow);
+}
+
+.draw-card-band {
+  font-size: clamp(0.58rem, 1.2vw, 0.85rem);
+  letter-spacing: 0.14em;
+  color: var(--cream-50);
+}
+
+.draw-card-sheen {
+  position: absolute;
+  inset: 0;
+  background: var(--yellow);
+  opacity: 0;
+  animation: draw-card-sheen 5.6s ease-in-out infinite;
+}
+
+@keyframes draw-card-sheen {
+  0%, 100% { opacity: 0; transform: translateX(-120%); }
+  50%      { opacity: 0.07; transform: translateX(120%); }
+}
+
+.draw-card-front {
+  background: var(--surface-sunken);
+  color: var(--cream);
+  transform: rotateY(180deg);
+  border-color: var(--yellow);
+  box-shadow: inset 0 0 0 1px rgba(255, 217, 0, 0.25);
+}
+
+.draw-card-flag { font-size: clamp(3.5rem, 10vw, 7rem); line-height: 1; }
+
+.draw-card-team {
+  font-size: clamp(1.4rem, 3.5vw, 2.8rem);
+  line-height: 1;
+  color: var(--yellow);
+}
+
+.draw-card-meta {
+  font-size: clamp(0.55rem, 1.1vw, 0.85rem);
+  letter-spacing: 0.1em;
+  color: var(--dim);
+}
+
+@keyframes draw-card-rattle {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  10%      { transform: translateX(-3px) rotate(-1deg); }
+  20%      { transform: translateX(4px) rotate(1.2deg); }
+  30%      { transform: translateX(-5px) rotate(-1.5deg); }
+  40%      { transform: translateX(5px) rotate(1.5deg); }
+  50%      { transform: translateX(-6px) rotate(-2deg); }
+  60%      { transform: translateX(6px) rotate(2deg); }
+  70%      { transform: translateX(-4px) rotate(-1deg); }
+  80%      { transform: translateX(3px) rotate(1deg); }
+  90%      { transform: translateX(-2px) rotate(-0.5deg); }
+}
+
+.draw-card-shake { animation: draw-card-rattle-once 0.45s ease-in-out 2 both; }
+
+@keyframes draw-card-rattle-once {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  20%      { transform: translateX(-4px) rotate(-1deg); }
+  40%      { transform: translateX(4px) rotate(1deg); }
+  60%      { transform: translateX(-3px) rotate(-0.8deg); }
+  80%      { transform: translateX(3px) rotate(0.8deg); }
+}
+
+.draw-reveal-actions {
+  flex-shrink: 0;
+  margin-top: 1rem;
+  padding-bottom: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .draw-reveal-cards {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .draw-card-wrap {
+    flex: 0 0 auto;
+    width: min(88vw, 420px);
+    max-width: none;
+    height: min(38dvh, 320px);
+    max-height: none;
+  }
+}
+
+.draw-reveal-finale-title {
+  font-size: clamp(2rem, 7vw, 4rem);
+  color: var(--yellow);
+  margin: 0.5rem 0 1rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .draw-reveal-backdrop { backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .draw-card-shake,
+  .draw-reveal-hat,
+  .draw-reveal-hat-name,
+  .draw-reveal-shuffle,
+  .draw-card-sheen { animation: none; }
+  .draw-card-scene { transition-duration: 0.5s; }
+}

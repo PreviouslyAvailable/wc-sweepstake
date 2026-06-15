@@ -59,8 +59,12 @@ export async function POST() {
   const { error } = await db.from("assignments").insert(rows);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-  await db.from("settings").upsert({ key: "draw_locked", value: true });
-  return NextResponse.json({ ok: true, dealt: rows.length });
+  const participantOrder = order.map((p) => p.id);
+  await Promise.all([
+    db.from("settings").upsert({ key: "draw_locked", value: true }),
+    db.from("settings").upsert({ key: "draw_reveal_order", value: participantOrder }),
+  ]);
+  return NextResponse.json({ ok: true, dealt: rows.length, participantOrder });
 }
 
 export async function DELETE() {
@@ -105,6 +109,8 @@ export async function DELETE() {
     .from("settings")
     .upsert({ key: "draw_locked", value: false });
   if (unlockError) return NextResponse.json({ error: unlockError.message }, { status: 400 });
+
+  await db.from("settings").upsert({ key: "draw_reveal_order", value: [] });
 
   return NextResponse.json({ ok: true });
 }
