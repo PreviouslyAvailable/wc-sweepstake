@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supaAnon } from "@/lib/supabase";
 import { NAME_TO_ID } from "@/lib/team-names";
+import { liveFixtureDates } from "@/lib/tournament-dates";
 
 // Cache the SportAPI response server-side — all page polls within 60s share one API call
 export const revalidate = 60;
@@ -42,12 +43,7 @@ export async function GET() {
   const apiKey = process.env.RAPIDAPI_KEY;
 
   const now = new Date();
-  const fmt = (d: Date) => d.toISOString().split("T")[0];
-  const dates = [
-    fmt(new Date(now.getTime() - 86400000)), // yesterday — in case page loads before midnight
-    fmt(now),
-    fmt(new Date(now.getTime() + 86400000)), // tomorrow — show upcoming fixtures
-  ];
+  const dates = liveFixtureDates(now);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rawEvents: any[] = [];
