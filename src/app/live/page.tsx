@@ -308,7 +308,7 @@ export default function LivePage() {
       {/* Annotation footnote — patent-clerk voice */}
       {!loading && hasAny && (finished.length > 0 || live.length > 0) && (
         <p className="mono" style={{ marginTop: "3rem", fontSize: "0.56rem", color: "var(--cream-18)", letterSpacing: "0.07em" }}>
-          FIG. 2 — PREVIEW PTS = GOALS + CLEAN SHEET + GIANT-KILLING · CARD PTS ADDED AFTER ADMIN SYNC
+          FIG. 2 — PREVIEW PTS = GOALS + CLEAN SHEET + GIANT-KILLING · CARD PTS FILE AFTER AUTO-SYNC
         </p>
       )}
     </div>

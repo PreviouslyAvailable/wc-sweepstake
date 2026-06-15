@@ -40,7 +40,8 @@ npm run dev
 
 Push to a Git repo, import into Vercel, and set the same environment variables
 (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
-`SUPABASE_SERVICE_ROLE_KEY`, and `ADMIN_PASSCODE`). Deploy. Share the URL
+`SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_PASSCODE`, `RAPIDAPI_KEY`, and optionally
+`CRON_SECRET` (Vercel sets this for the 15-minute results sync cron). Deploy. Share the URL
 with the office — no accounts
 needed; viewing is open, and all writes are behind the passcode.
 
@@ -49,8 +50,9 @@ needed; viewing is open, and all writes are behind the passcode.
 1. **Before kickoff:** go to `/draw`, unlock with the passcode, add everyone's
    name, then hit **Run the draw** — ideally with the office watching, since
    the tickets reveal one by one.
-2. **Each morning:** open `/admin` and key in yesterday's group results
-   (team A, score, team B). The ladder updates instantly.
+2. **During the tournament:** results sync automatically from the live feed every
+   15 minutes — no morning data entry needed. Open `/admin` only to review filed
+   results or mark eliminations after each round.
 3. **After each round:** in **Round progress**, bump every surviving team to
    the round it reached and tick **out** for the eliminated. (E.g. when the
    R32 line-up is known: the 32 survivors → "Reached R32", the other 16 → out.)
@@ -64,7 +66,7 @@ passcode, and don't put anything private in the database.
 
 ## Ideas for v2
 
-- Auto-sync results from football-data.org (free tier covers the World Cup)
-  via a Vercel cron route, replacing manual entry.
+- Auto-sync results from SportAPI via a Vercel cron route — **done**; manual entry
+  remains as a fallback on the results desk.
 - A "wooden spoon" prize view: first participant to lose all teams.
 - Per-match predictions layered on top of the sweepstake for a second comp.

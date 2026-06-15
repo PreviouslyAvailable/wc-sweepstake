@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 interface T {
@@ -72,6 +72,8 @@ export default function ResultsDesk() {
   const [results, setResults] = useState<R[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const syncingRef = useRef(false);
 
   // result form
   const [stage, setStage] = useState("group");
@@ -98,28 +100,39 @@ export default function ResultsDesk() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Auto-sync results from API-Football whenever admin becomes true
+  const runSync = useCallback(async () => {
+    if (!admin || syncingRef.current) return;
+    syncingRef.current = true;
+    setSyncing(true);
+    setSyncMsg("Checking for new results…");
+    try {
+      const r = await fetch("/api/sync");
+      const data = await r.json();
+      if (data.error) {
+        setSyncMsg(`Sync error: ${data.error}`);
+      } else if (data.synced > 0) {
+        setSyncMsg(`Synced ${data.synced} new result${data.synced === 1 ? "" : "s"}`);
+        await load();
+      } else if (data.message) {
+        setSyncMsg(data.message);
+      } else {
+        setSyncMsg("Up to date");
+      }
+    } catch {
+      setSyncMsg("Sync unavailable");
+    } finally {
+      syncingRef.current = false;
+      setSyncing(false);
+    }
+  }, [admin, load]);
+
+  // Auto-sync on unlock and every 5 minutes while the desk is open
   useEffect(() => {
     if (!admin) return;
-    setSyncMsg("Checking for new results…");
-    fetch("/api/sync")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.error) {
-          setSyncMsg(`Sync error: ${data.error}`);
-        } else if (data.message) {
-          setSyncMsg(data.message);
-        } else if (data.synced > 0) {
-          setSyncMsg(`Synced ${data.synced} new result${data.synced === 1 ? "" : "s"}`);
-          load();
-        } else {
-          setSyncMsg(`Up to date`);
-        }
-      })
-      .catch(() => setSyncMsg("Sync unavailable"));
-  // Only run when admin status first becomes true, not on every load() change
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [admin]);
+    runSync();
+    const t = setInterval(runSync, 5 * 60_000);
+    return () => clearInterval(t);
+  }, [admin, runSync]);
 
   async function login() {
     setError(null);
@@ -230,16 +243,65 @@ export default function ResultsDesk() {
           </h1>
         </div>
         {syncMsg && (
-          <span className="mono text-xs uppercase" style={{ color: "var(--dim)", letterSpacing: "0.06em" }}>
-            {syncMsg}
-          </span>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="mono text-xs uppercase" style={{ color: "var(--dim)", letterSpacing: "0.06em" }}>
+              {syncMsg}
+            </span>
+            <button
+              className="text-xs underline"
+              style={{ color: "var(--dim)" }}
+              onClick={runSync}
+              disabled={syncing}
+            >
+              {syncing ? "syncing…" : "sync now"}
+            </button>
+          </div>
         )}
       </div>
 
       <section className="ruled-box mt-8">
         <p className="ruled-box-label">Form 1 — match result entry</p>
-        <h2 className="display text-2xl">Record a match</h2>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <h2 className="display text-2xl">Filed results</h2>
+        <p className="mt-2 text-xs" style={{ color: "var(--dim)" }}>
+          Results sync automatically from the live feed every 15 minutes (and while this desk is open).
+          Manual entry below is a fallback only — cards, scores, and opponents are pulled from the API.
+        </p>
+
+        <ul className="mt-5 space-y-1">
+          {results.map((r) => (
+            <li key={r.id} className="rule-faint flex flex-wrap items-center gap-3 pb-1.5 text-sm">
+              <span className="mono text-xs uppercase" style={{ color: "var(--dim)" }}>{r.stage}</span>
+              <span>{teamName(r.team_a)}</span>
+              <span className="mono font-bold">{r.score_a}–{r.score_b}</span>
+              <span>{teamName(r.team_b)}</span>
+              {(r.yellow_a || r.red_a || r.yellow_b || r.red_b) ? (
+                <span className="text-xs" style={{ color: "var(--dim)" }}>{cardSummary(r)}</span>
+              ) : null}
+              <span className="mono ml-auto text-xs" style={{ color: "var(--dim)", letterSpacing: "0.06em" }}>
+                FILED {new Date(r.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }).toUpperCase()}
+              </span>
+              <button
+                className="text-xs underline"
+                style={{ color: "var(--dim)" }}
+                onClick={() => deleteResult(r.id)}
+              >
+                delete
+              </button>
+            </li>
+          ))}
+          {!results.length && (
+            <li className="text-sm" style={{ color: "var(--dim)" }}>
+              No results yet — first whistle is coming.
+            </li>
+          )}
+        </ul>
+
+        <div className="mt-8">
+          <p className="mono text-xs uppercase" style={{ color: "var(--dim)", letterSpacing: "0.06em" }}>
+            Manual override
+          </p>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
           <select className="field" value={stage} onChange={(e) => setStage(e.target.value)}>
             {STAGES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
@@ -285,36 +347,6 @@ export default function ResultsDesk() {
           Two yellows = enter 2 yellows (not a red). Straight red = 1 red.
         </p>
         {error && <p className="mt-2 text-sm" style={{ color: "var(--red)" }}>{error}</p>}
-
-        <ul className="mt-5 space-y-1">
-          {results.map((r) => (
-            <li key={r.id} className="rule-faint flex flex-wrap items-center gap-3 pb-1.5 text-sm">
-              <span className="mono text-xs uppercase" style={{ color: "var(--dim)" }}>{r.stage}</span>
-              <span>{teamName(r.team_a)}</span>
-              <span className="mono font-bold">{r.score_a}–{r.score_b}</span>
-              <span>{teamName(r.team_b)}</span>
-              {(r.yellow_a || r.red_a || r.yellow_b || r.red_b) ? (
-                <span className="text-xs" style={{ color: "var(--dim)" }}>{cardSummary(r)}</span>
-              ) : null}
-              {/* Time as material — the stub records when it was filed */}
-              <span className="mono ml-auto text-xs" style={{ color: "var(--dim)", letterSpacing: "0.06em" }}>
-                FILED {new Date(r.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }).toUpperCase()}
-              </span>
-              <button
-                className="text-xs underline"
-                style={{ color: "var(--dim)" }}
-                onClick={() => deleteResult(r.id)}
-              >
-                delete
-              </button>
-            </li>
-          ))}
-          {!results.length && (
-            <li className="text-sm" style={{ color: "var(--dim)" }}>
-              No results yet — first whistle is coming.
-            </li>
-          )}
-        </ul>
       </section>
 
       <section className="ruled-box mt-12">
