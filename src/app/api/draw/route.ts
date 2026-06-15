@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { randomInt } from "crypto";
 import { supaAdmin } from "@/lib/supabase";
 import { isAdmin } from "@/lib/auth";
+import { DRAW_POOL_SIZE, resolveActiveDrawPool } from "@/lib/draw-pool";
 
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -23,37 +24,33 @@ export async function POST() {
 
   const [{ data: participants }, { data: teams }] = await Promise.all([
     db.from("participants").select("id,name"),
-    db.from("teams").select("id,band"),
+    db.from("teams").select("id,world_rank"),
   ]);
 
   if (!participants?.length) {
     return NextResponse.json({ error: "Add participants first" }, { status: 400 });
   }
 
-  const bandA = (teams ?? []).filter((t) => t.band === "A").map((t) => t.id);
-  const bandB = (teams ?? []).filter((t) => t.band === "B").map((t) => t.id);
-
-  if (bandA.length !== bandB.length) {
+  if (participants.length > DRAW_POOL_SIZE) {
     return NextResponse.json(
-      { error: `Band A has ${bandA.length} teams but Band B has ${bandB.length} — they must match` },
-      { status: 400 }
-    );
-  }
-  if (participants.length !== bandA.length) {
-    return NextResponse.json(
-      { error: `Need exactly ${bandA.length} participants (one per team per band), got ${participants.length}` },
+      { error: `Maximum ${DRAW_POOL_SIZE} participants — remove ${participants.length - DRAW_POOL_SIZE}` },
       { status: 400 }
     );
   }
 
-  // Shuffle the participant order and both band decks independently.
+  const pool = resolveActiveDrawPool(participants.length, teams ?? []);
+  const deckA = shuffle(pool.bandA);
+  const deckB = shuffle(pool.bandB);
+
+  if (deckA.length !== participants.length || deckB.length !== participants.length) {
+    return NextResponse.json({ error: "Could not build a balanced draw pool" }, { status: 400 });
+  }
+
   const order = shuffle(participants);
-  const deckA = shuffle(bandA);
-  const deckB = shuffle(bandB);
 
   const rows = order.flatMap((p, i) => [
-    { participant_id: p.id, team_id: deckA[i], position: 0 }, // Band A contender
-    { participant_id: p.id, team_id: deckB[i], position: 1 }, // Band B wildcard
+    { participant_id: p.id, team_id: deckA[i], position: 0 },
+    { participant_id: p.id, team_id: deckB[i], position: 1 },
   ]);
 
   const { error } = await db.from("assignments").insert(rows);
@@ -63,17 +60,20 @@ export async function POST() {
   await Promise.all([
     db.from("settings").upsert({ key: "draw_locked", value: true }),
     db.from("settings").upsert({ key: "draw_reveal_order", value: participantOrder }),
+    db.from("settings").upsert({ key: "draw_excluded_teams", value: pool.excluded }),
   ]);
-  return NextResponse.json({ ok: true, dealt: rows.length, participantOrder });
+  return NextResponse.json({
+    ok: true,
+    dealt: rows.length,
+    participantOrder,
+    excluded: pool.excluded,
+  });
 }
 
 export async function DELETE() {
   if (!(await isAdmin())) return NextResponse.json({ error: "Not authorised" }, { status: 401 });
   const db = supaAdmin();
 
-  // File the outgoing draw before clearing it. The archive never fully
-  // deletes: retired tickets are kept (with holder names denormalised,
-  // so the record survives participant deletion) in settings.draw_archive.
   const [{ data: assignments }, { data: participants }] = await Promise.all([
     db.from("assignments").select("participant_id,team_id,position"),
     db.from("participants").select("id,name"),
@@ -110,7 +110,10 @@ export async function DELETE() {
     .upsert({ key: "draw_locked", value: false });
   if (unlockError) return NextResponse.json({ error: unlockError.message }, { status: 400 });
 
-  await db.from("settings").upsert({ key: "draw_reveal_order", value: [] });
+  await Promise.all([
+    db.from("settings").upsert({ key: "draw_reveal_order", value: [] }),
+    db.from("settings").upsert({ key: "draw_excluded_teams", value: [] }),
+  ]);
 
   return NextResponse.json({ ok: true });
 }

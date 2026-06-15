@@ -142,3 +142,42 @@ export function computeStandings(
       a.participant.name.localeCompare(b.participant.name)
   );
 }
+
+/** Points for teams that appear in results but hold no drawcard — opponents and held-out pool sides. */
+export function computeUnclaimedTeamScores(
+  assignments: Assignment[],
+  teams: Team[],
+  results: Result[]
+): TeamScore[] {
+  const assigned = new Set(assignments.map((a) => a.team_id));
+  const teamById = new Map(teams.map((t) => [t.id, t]));
+  const unclaimedIds = new Set<string>();
+
+  for (const r of results) {
+    if (!assigned.has(r.team_a)) unclaimedIds.add(r.team_a);
+    if (!assigned.has(r.team_b)) unclaimedIds.add(r.team_b);
+  }
+
+  const scores: TeamScore[] = [];
+  for (const teamId of unclaimedIds) {
+    const team = teamById.get(teamId);
+    if (!team) continue;
+
+    const breakdown: MatchBreakdown = { goals: 0, cleanSheet: 0, cards: 0, giantKilling: 0, total: 0 };
+    for (const result of results) {
+      const m = matchBreakdownForTeam(teamId, result, teamById);
+      breakdown.goals += m.goals;
+      breakdown.cleanSheet += m.cleanSheet;
+      breakdown.cards += m.cards;
+      breakdown.giantKilling += m.giantKilling;
+      breakdown.total += m.total;
+    }
+    if (breakdown.total > 0) {
+      scores.push({ team, breakdown, total: breakdown.total });
+    }
+  }
+
+  return scores.sort(
+    (a, b) => b.total - a.total || a.team.name.localeCompare(b.team.name)
+  );
+}

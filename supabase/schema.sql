@@ -12,7 +12,7 @@ create table if not exists teams (
   id text primary key,                 -- e.g. 'NZL'
   name text not null,
   flag text not null,                  -- emoji
-  band text not null default 'A',      -- 'A' (contender) or 'B' (wildcard)
+  band text not null default 'A',      -- 'A' | 'B' (draw pool) or 'O' (opponent, results only)
   world_rank int not null default 0,   -- FIFA world ranking (fixed for the tournament)
   is_out boolean not null default false,
   -- kept for compat; no longer used for scoring

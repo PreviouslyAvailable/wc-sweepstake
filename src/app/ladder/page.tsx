@@ -1,11 +1,18 @@
 import { supaAnon } from "@/lib/supabase";
 import {
+  buildNextFixtureByTeam,
+  buildOwnerByTeamId,
+  ladderRowMeta,
+} from "@/lib/ladder-meta";
+import {
   computeStandings,
+  computeUnclaimedTeamScores,
   Participant,
   Assignment,
   Team,
   Result,
 } from "@/lib/scoring";
+import { fetchWcFixtures } from "@/lib/wc-fixtures";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +29,7 @@ export default async function Ladder() {
   const assignments = (a.data ?? []) as Assignment[];
   const teams = (t.data ?? []) as Team[];
   const results = (r.data ?? []) as Result[];
+  const teamById = new Map(teams.map((tm) => [tm.id, tm]));
 
   if (!assignments.length) {
     return (
@@ -36,7 +44,21 @@ export default async function Ladder() {
   }
 
   const standings = computeStandings(participants, assignments, teams, results);
+  const unclaimed = computeUnclaimedTeamScores(assignments, teams, results);
   const leaderTotal = standings[0]?.total ?? 0;
+
+  const apiKey = process.env.RAPIDAPI_KEY;
+  let fixtures: Awaited<ReturnType<typeof fetchWcFixtures>> = [];
+  if (apiKey) {
+    try {
+      fixtures = await fetchWcFixtures(apiKey);
+    } catch {
+      // Fixture sheet unavailable — GP and standings still render
+    }
+  }
+  const ownerByTeamId = buildOwnerByTeamId(assignments, participants);
+  const nextByTeam = buildNextFixtureByTeam(fixtures, ownerByTeamId, teamById);
+
   const issued = new Date().toLocaleDateString("en-GB", {
     day: "2-digit", month: "short", year: "numeric",
   }).toUpperCase();
@@ -54,48 +76,125 @@ export default async function Ladder() {
         </h1>
       </div>
 
-      <ol className="mt-8">
-        {standings.map((row, i) => (
-          <li key={row.participant.id} className="index-row">
-            <span className="index-num">{String(i + 1).padStart(2, "0")}</span>
-            <span className="display text-xl">{row.participant.name}</span>
-            {i === 0 && row.total === leaderTotal && row.total > 0 && (
-              <span className="stamp-mark" style={{ color: "var(--yellow)" }}>
-                Leader
-              </span>
-            )}
-            <span className="flex flex-wrap gap-1.5 text-sm">
-              {row.teams.map(({ team, breakdown, total }) => (
+      <div className="mt-8">
+        <div className="ladder-row ladder-head">
+          <span>#</span>
+          <span>Holder</span>
+          <div className="ladder-head-fixture">
+            <span>Next vs</span>
+            <span>Date</span>
+          </div>
+          <span className="ladder-num">GP</span>
+          <span className="ladder-num">Alive</span>
+          <span className="ladder-num">Pts</span>
+        </div>
+        <ol>
+          {standings.map((row, i) => {
+            const meta = ladderRowMeta(row, results, nextByTeam);
+            return (
+              <li key={row.participant.id} className="ladder-row">
+                <span className="index-num">{String(i + 1).padStart(2, "0")}</span>
+                <div className="ladder-holder-block">
+                  <span className="ladder-holder-name display text-xl">
+                    {row.participant.name}
+                    {i === 0 && row.total === leaderTotal && row.total > 0 && (
+                      <span className="stamp-mark" style={{ color: "var(--yellow)" }}>
+                        Leader
+                      </span>
+                    )}
+                  </span>
+                  <span className="ladder-drawcards text-sm">
+                    {row.teams.map(({ team, breakdown, total }) => (
+                      <span
+                        key={team.id}
+                        title={[
+                          `${team.name} [${team.world_rank}] — ${total} pts`,
+                          `Goals: ${breakdown.goals}`,
+                          `Clean sheets: ${breakdown.cleanSheet}`,
+                          `Cards: ${breakdown.cards}`,
+                          breakdown.giantKilling ? `Giant-killing: ${breakdown.giantKilling}` : null,
+                          team.is_out ? "(eliminated)" : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                        style={{ opacity: team.is_out ? 0.35 : 1 }}
+                      >
+                        {team.flag}
+                      </span>
+                    ))}
+                  </span>
+                </div>
+                <div className="ladder-fixture">
+                  <span className="ladder-next" title={meta.nextTitle}>
+                    {meta.nextLabel}
+                  </span>
+                  <span
+                    className="ladder-date tabular-nums"
+                    title={meta.nextDateTitle || undefined}
+                  >
+                    {meta.nextDate}
+                  </span>
+                </div>
                 <span
-                  key={team.id}
-                  title={[
-                    `${team.name} [${team.world_rank}] — ${total} pts`,
-                    `Goals: ${breakdown.goals}`,
-                    `Clean sheets: ${breakdown.cleanSheet}`,
-                    `Cards: ${breakdown.cards}`,
-                    breakdown.giantKilling ? `Giant-killing: ${breakdown.giantKilling}` : null,
-                    team.is_out ? "(eliminated)" : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                  style={{ opacity: team.is_out ? 0.35 : 1 }}
+                  className="ladder-num text-sm"
+                  style={{ color: "var(--dim)" }}
+                  title={meta.gamesTooltip}
                 >
-                  {team.flag}
+                  {meta.gamesPlayed}
                 </span>
-              ))}
-            </span>
-            <span className="mono ml-auto text-sm" style={{ color: "var(--dim)" }}>
-              {row.alive} alive
-            </span>
-            <span
-              className="mono w-16 text-right text-2xl"
-              style={{ color: "var(--yellow)" }}
-            >
-              {row.total}
-            </span>
-          </li>
-        ))}
-      </ol>
+                <span className="ladder-num text-sm" style={{ color: "var(--dim)" }}>
+                  {row.alive}
+                </span>
+                <span
+                  className="ladder-num text-2xl"
+                  style={{ color: "var(--yellow)" }}
+                >
+                  {row.total}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+
+      {unclaimed.length > 0 && (
+        <section className="ruled-box mt-12 max-w-xl">
+          <p className="ruled-box-label">Unclaimed record — no holder issued</p>
+          <h2 className="display text-2xl" style={{ marginBottom: "0.75rem" }}>
+            Points <span className="intruder">l</span>eft on the table
+          </h2>
+          <p className="mono mb-4 text-xs" style={{ color: "var(--dim)", letterSpacing: "0.06em" }}>
+            Opponents and held-out draw teams · scored under the schedule but not on any holder card
+          </p>
+          <ul>
+            {unclaimed.map(({ team, breakdown, total }) => (
+              <li
+                key={team.id}
+                className="index-row"
+                style={{ borderColor: "var(--rule)" }}
+                title={[
+                  `${team.name} [${team.world_rank}] — ${total} pts`,
+                  `Goals: ${breakdown.goals}`,
+                  `Clean sheets: ${breakdown.cleanSheet}`,
+                  `Cards: ${breakdown.cards}`,
+                  breakdown.giantKilling ? `Giant-killing: ${breakdown.giantKilling}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              >
+                <span className="text-lg">{team.flag}</span>
+                <span className="display text-lg">{team.name}</span>
+                <span className="mono text-xs" style={{ color: "var(--dim)" }}>
+                  [{team.world_rank}]
+                </span>
+                <span className="mono ml-auto text-xl" style={{ color: "var(--cream)" }}>
+                  {total}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* Scoring rules — ARCHIVE register, patent-clerk deadpan, no emoji */}
       <section className="ruled-box mt-12 max-w-xl">

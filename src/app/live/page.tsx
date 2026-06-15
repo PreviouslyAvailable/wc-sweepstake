@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { fmtFixtureDate, fmtFixtureKickoff } from "@/lib/match-dates";
 
 interface TeamSide {
   teamId: string | null;
@@ -25,14 +26,6 @@ interface Match {
 interface LiveData {
   matches: Match[];
   asOf: string;
-}
-
-function fmtKickoff(ts: number) {
-  return new Date(ts * 1000).toLocaleTimeString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Europe/London",
-  });
 }
 
 /* ── Perimeter Chant ──────────────────────────────────
@@ -80,7 +73,7 @@ function PerimeterChant({ text }: { text: string }) {
 function StatusBadge({ match }: { match: Match }) {
   const isLive = match.status === "inprogress";
   const isFt   = match.status === "finished";
-  const label  = match.statusLabel || (match.status === "notstarted" ? fmtKickoff(match.startTimestamp) : "");
+  const label  = match.statusLabel || (match.status === "notstarted" ? fmtFixtureKickoff(match.startTimestamp) : "");
 
   if (isLive) {
     return (
@@ -106,7 +99,10 @@ function MatchCard({ match }: { match: Match }) {
   return (
     <div className={`match-card stamp${isLive ? " is-live" : ""}`}>
       <div className="match-card-head">
-        <span className="round-label">{match.round || "WORLD CUP 2026"}</span>
+        <div className="match-card-meta">
+          <span className="match-date-label">{fmtFixtureDate(match.startTimestamp)}</span>
+          <span className="round-label">{match.round || "WORLD CUP 2026"}</span>
+        </div>
         <StatusBadge match={match} />
       </div>
 
@@ -126,7 +122,7 @@ function MatchCard({ match }: { match: Match }) {
             </>
           ) : (
             <div className="match-kickoff-block">
-              <span className="match-kickoff-time">{fmtKickoff(match.startTimestamp)}</span>
+              <span className="match-kickoff-time">{fmtFixtureKickoff(match.startTimestamp)}</span>
               <span className="match-kickoff-vs">KO</span>
             </div>
           )}

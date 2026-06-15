@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import dynamic from "next/dynamic";
 import { buildDealOrder } from "@/lib/draw-order";
 import type { DrawAssignment, DrawPerson, DrawTeam } from "@/lib/draw-order";
+import { DRAW_POOL_SIZE, isDrawPoolBandA, isDrawPoolBandB, resolveActiveDrawPool } from "@/lib/draw-pool";
 
 const DrawRevealOverlay = dynamic(
   () =>
@@ -122,10 +123,12 @@ export default function DrawPage() {
   }
 
   async function runDraw() {
-    const needed = teams.filter((t) => t.band === "A").length;
     if (!confirm(
       `Deal the teams to ${people.length} people? ` +
       `Each person gets one Band A contender and one Band B wildcard. ` +
+      (excludedTeams.length
+        ? `${excludedTeams.length} lowest-ranked teams sit this draw out (${excludedNames}). `
+        : "") +
       `This can only be done once.`
     )) return;
     setBusy(true);
@@ -148,10 +151,20 @@ export default function DrawPage() {
   }
 
   const teamById = new Map(teams.map((t) => [t.id, t]));
-  const bandACount = teams.filter((t) => t.band === "A").length;
-  const bandBCount = teams.filter((t) => t.band === "B").length;
-  const teamsPerBand = Math.min(bandACount, bandBCount);
-  const ready = people.length === teamsPerBand;
+  const activePool = resolveActiveDrawPool(
+    people.length,
+    teams.filter((t) => isDrawPoolBandA(t) || isDrawPoolBandB(t)).map((t) => ({
+      id: t.id,
+      world_rank: t.world_rank,
+    }))
+  );
+  const bandACount = activePool.bandA.length;
+  const bandBCount = activePool.bandB.length;
+  const excludedTeams = activePool.excluded;
+  const excludedNames = excludedTeams
+    .map((id) => teamById.get(id)?.name ?? id)
+    .join(", ");
+  const ready = people.length > 0 && people.length <= DRAW_POOL_SIZE;
 
   const dealOrder = buildDealOrder(assignments, people);
   const shown = locked && !hideGridDuringReveal ? dealOrder : [];
@@ -196,10 +209,12 @@ export default function DrawPage() {
           <section>
             <h2 className="display text-2xl">Names in the hat</h2>
             <p className="mt-1 text-xs" style={{ color: "var(--dim)" }}>
-              Need exactly {teamsPerBand} names — one per team per band.
-              {people.length > 0 && (
-                <span style={{ color: people.length === teamsPerBand ? "var(--yellow)" : "var(--cream)" }}>
-                  {" "}{people.length}/{teamsPerBand}
+              {people.length
+                ? `${people.length} ${people.length === 1 ? "name" : "names"} — ${bandACount} tickets per band`
+                : `Add names — up to ${DRAW_POOL_SIZE}, one per team per band`}
+              {people.length > 0 && people.length < DRAW_POOL_SIZE && excludedTeams.length > 0 && (
+                <span style={{ color: "var(--yellow)" }}>
+                  {" "}· {excludedTeams.length} lowest-ranked teams sit out
                 </span>
               )}
             </p>
@@ -239,6 +254,11 @@ export default function DrawPage() {
               Each person draws one from each — everyone gets exactly 2 teams.
               The shuffle is cryptographic — no fix, no favours.
             </p>
+            {excludedTeams.length > 0 && (
+              <p className="mt-2 text-xs" style={{ color: "var(--dim)" }}>
+                Lowest-ranked teams held out this edition: {excludedNames}.
+              </p>
+            )}
             <button
               className="btn mt-4 text-lg"
               onClick={runDraw}
@@ -246,11 +266,9 @@ export default function DrawPage() {
             >
               {busy ? "Shuffling…" : "Run the draw"}
             </button>
-            {!ready && people.length > 0 && (
+            {!ready && people.length > DRAW_POOL_SIZE && (
               <p className="mt-2 text-xs" style={{ color: "var(--yellow)" }}>
-                {people.length < teamsPerBand
-                  ? `Add ${teamsPerBand - people.length} more ${teamsPerBand - people.length === 1 ? "person" : "people"} to fill all tickets.`
-                  : `${people.length - teamsPerBand} too many — remove some names.`}
+                {people.length - DRAW_POOL_SIZE} too many — remove some names.
               </p>
             )}
             <p className="mt-2 text-xs font-semibold" style={{ color: "var(--yellow)" }}>
@@ -293,14 +311,20 @@ export default function DrawPage() {
           <p className="text-sm" style={{ color: "var(--dim)" }}>
             The draw is complete and locked. Every issued ticket is on record below.
           </p>
-          {shown.some((a) => teamById.get(a.team_id)?.band === "A") && (
+          {shown.some((a) => {
+            const t = teamById.get(a.team_id);
+            return t && isDrawPoolBandA(t);
+          }) && (
             <div className="mt-6">
               <p className="mb-3 text-xs font-semibold uppercase" style={{ color: "var(--yellow)" }}>
                 Band A — Contenders
               </p>
               <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {shown
-                  .filter((a) => teamById.get(a.team_id)?.band === "A")
+                  .filter((a) => {
+                    const t = teamById.get(a.team_id);
+                    return t && isDrawPoolBandA(t);
+                  })
                   .map((a) => {
                     const team = teamById.get(a.team_id);
                     const person = people.find((p) => p.id === a.participant_id);
@@ -321,14 +345,20 @@ export default function DrawPage() {
               </ul>
             </div>
           )}
-          {shown.some((a) => teamById.get(a.team_id)?.band === "B") && (
+          {shown.some((a) => {
+            const t = teamById.get(a.team_id);
+            return t && isDrawPoolBandB(t);
+          }) && (
             <div className="mt-6">
               <p className="mb-3 text-xs font-semibold uppercase" style={{ color: "var(--dim)" }}>
                 Band B — Wildcards
               </p>
               <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {shown
-                  .filter((a) => teamById.get(a.team_id)?.band === "B")
+                  .filter((a) => {
+                    const t = teamById.get(a.team_id);
+                    return t && isDrawPoolBandB(t);
+                  })
                   .map((a) => {
                     const team = teamById.get(a.team_id);
                     const person = people.find((p) => p.id === a.participant_id);

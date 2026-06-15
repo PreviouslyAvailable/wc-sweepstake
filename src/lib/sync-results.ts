@@ -51,7 +51,7 @@ async function ensureOpponentTeam(
       id: teamId,
       name: meta.name,
       flag: meta.flag,
-      band: "B",
+      band: "O", // opponent — not in the draw pool (Band A/B)
       world_rank: meta.world_rank,
       is_out: false,
       group_letter: "",
