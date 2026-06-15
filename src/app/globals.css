@@ -317,6 +317,60 @@ body {
 .ladder-time {
   text-align: right;
 }
+
+/* ── Programme fixture sheet ───────────────────────── */
+.fixture-sheet {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.fixture-sheet-row {
+  display: grid;
+  grid-template-columns: 2rem minmax(6.5rem, auto) minmax(0, 1fr);
+  gap: 0.5rem 0.75rem;
+  align-items: baseline;
+  border-bottom: 1px solid var(--rule);
+  padding: 0.65rem 0;
+}
+.fixture-sheet-num {
+  font-size: 0.62rem;
+  color: var(--dim);
+}
+.fixture-sheet-when {
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.fixture-sheet-match {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.5rem;
+  min-width: 0;
+  font-size: 0.9rem;
+}
+.fixture-sheet-side {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  min-width: 0;
+}
+.fixture-sheet-holder {
+  font-weight: 600;
+  color: var(--cream);
+}
+.fixture-sheet-team {
+  color: var(--dim);
+  font-size: 0.8rem;
+}
+.fixture-sheet-vs {
+  font-size: 0.55rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
 .index-num {
   font-family: "IBM Plex Mono", monospace;
   font-variant-numeric: tabular-nums;
