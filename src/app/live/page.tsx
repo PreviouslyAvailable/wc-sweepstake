@@ -99,10 +99,7 @@ function MatchCard({ match }: { match: Match }) {
   return (
     <div className={`match-card stamp${isLive ? " is-live" : ""}`}>
       <div className="match-card-head">
-        <div className="match-card-meta">
-          <span className="match-date-label">{fmtFixtureDate(match.startTimestamp)}</span>
-          <span className="round-label">{match.round || "WORLD CUP 2026"}</span>
-        </div>
+        <span className="round-label">{match.round || "WORLD CUP 2026"}</span>
         <StatusBadge match={match} />
       </div>
 
@@ -116,13 +113,17 @@ function MatchCard({ match }: { match: Match }) {
         <div className="match-center">
           {showScore ? (
             <>
-              <span className={`match-score-num${awayWins ? " dim" : ""}`}>{match.home.score}</span>
-              <span className="match-score-sep">–</span>
-              <span className={`match-score-num${homeWins ? " dim" : ""}`}>{match.away.score}</span>
+              <div className="match-score-row">
+                <span className={`match-score-num${awayWins ? " dim" : ""}`}>{match.home.score}</span>
+                <span className="match-score-sep">–</span>
+                <span className={`match-score-num${homeWins ? " dim" : ""}`}>{match.away.score}</span>
+              </div>
+              <span className="match-center-date">{fmtFixtureDate(match.startTimestamp)}</span>
             </>
           ) : (
             <div className="match-kickoff-block">
               <span className="match-kickoff-time">{fmtFixtureKickoff(match.startTimestamp)}</span>
+              <span className="match-center-date">{fmtFixtureDate(match.startTimestamp)}</span>
               <span className="match-kickoff-vs">KO</span>
             </div>
           )}

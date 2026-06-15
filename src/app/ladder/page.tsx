@@ -83,8 +83,9 @@ export default async function Ladder() {
           <div className="ladder-head-fixture">
             <span>Next vs</span>
             <span>Date</span>
+            <span>NZST</span>
           </div>
-          <span className="ladder-num">GP</span>
+          <span className="ladder-num ladder-gp">Games played</span>
           <span className="ladder-num">Alive</span>
           <span className="ladder-num">Pts</span>
         </div>
@@ -133,6 +134,12 @@ export default async function Ladder() {
                     title={meta.nextDateTitle || undefined}
                   >
                     {meta.nextDate}
+                  </span>
+                  <span
+                    className="ladder-time tabular-nums"
+                    title={meta.nextTimeTitle || undefined}
+                  >
+                    {meta.nextTime}
                   </span>
                 </div>
                 <span

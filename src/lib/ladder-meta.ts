@@ -5,7 +5,7 @@ import type {
   StandingRow,
   Team,
 } from "@/lib/scoring";
-import { fmtFixtureDate, fmtFixtureDateTime } from "@/lib/match-dates";
+import { fmtFixtureNzstDate, fmtFixtureNzstDateTime, fmtFixtureNzstTime } from "@/lib/match-dates";
 import type { WcFixture } from "@/lib/wc-fixtures";
 
 export interface TeamNextFixture {
@@ -20,6 +20,8 @@ export interface LadderRowMeta {
   gamesTooltip: string;
   nextLabel: string;
   nextTitle: string;
+  nextTime: string;
+  nextTimeTitle: string;
   nextDate: string;
   nextDateTitle: string;
 }
@@ -36,6 +38,30 @@ export function buildOwnerByTeamId(
   return new Map(
     assignments.map((a) => [a.team_id, nameById.get(a.participant_id) ?? ""])
   );
+}
+
+function fixtureForTeam(
+  teamId: string,
+  fixture: WcFixture,
+  teamById: Map<string, Team>,
+  ownerByTeamId: Map<string, string>
+): TeamNextFixture | null {
+  const opponentId =
+    fixture.homeId === teamId ? fixture.awayId : fixture.homeId;
+  if (!opponentId) return null;
+
+  const opponent = teamById.get(opponentId);
+  if (!opponent) return null;
+
+  const team = teamById.get(teamId);
+  const holder = ownerByTeamId.get(opponentId);
+
+  return {
+    teamFlag: team?.flag ?? "🏳️",
+    opponentLabel: holder || opponent.name,
+    isLive: fixture.status === "inprogress",
+    startTimestamp: fixture.startTimestamp,
+  };
 }
 
 export function buildNextFixtureByTeam(
@@ -59,20 +85,14 @@ export function buildNextFixtureByTeam(
 
   const next = new Map<string, TeamNextFixture>();
   for (const [teamId, list] of byTeam) {
-    list.sort((a, b) => a.startTimestamp - b.startTimestamp);
-    const fixture = list[0];
-    const opponentId =
-      fixture.homeId === teamId ? fixture.awayId : fixture.homeId;
-    const team = teamById.get(teamId);
-    const opponent = opponentId ? teamById.get(opponentId) : null;
-    const holder = opponentId ? ownerByTeamId.get(opponentId) : undefined;
-
-    next.set(teamId, {
-      teamFlag: team?.flag ?? "🏳️",
-      opponentLabel: holder || opponent?.name || "TBC",
-      isLive: fixture.status === "inprogress",
-      startTimestamp: fixture.startTimestamp,
-    });
+    const sorted = [...list].sort((a, b) => a.startTimestamp - b.startTimestamp);
+    for (const fixture of sorted) {
+      const resolved = fixtureForTeam(teamId, fixture, teamById, ownerByTeamId);
+      if (resolved) {
+        next.set(teamId, resolved);
+        break;
+      }
+    }
   }
   return next;
 }
@@ -106,6 +126,8 @@ export function ladderRowMeta(
       gamesTooltip: gameParts.join(" · ") || "No matches filed",
       nextLabel: "Out",
       nextTitle: "Both drawcards eliminated",
+      nextTime: "—",
+      nextTimeTitle: "",
       nextDate: "—",
       nextDateTitle: "",
     };
@@ -117,6 +139,8 @@ export function ladderRowMeta(
       gamesTooltip: gameParts.join(" · ") || "No matches filed",
       nextLabel: "—",
       nextTitle: "No upcoming fixture on the sheet",
+      nextTime: "—",
+      nextTimeTitle: "",
       nextDate: "—",
       nextDateTitle: "",
     };
@@ -128,16 +152,17 @@ export function ladderRowMeta(
       : `${fixture.teamFlag} vs ${fixture.opponentLabel}`
   );
 
-  const dateLabels = upcoming.map(({ fixture }) => fmtFixtureDateTime(fixture.startTimestamp));
+  const dateLabels = upcoming.map(({ fixture }) => fmtFixtureNzstDateTime(fixture.startTimestamp));
+  const primary = upcoming[0].fixture;
 
   return {
     gamesPlayed,
     gamesTooltip: gameParts.join(" · ") || "No matches filed",
     nextLabel: labels[0],
     nextTitle: labels.join(" · "),
-    nextDate: upcoming[0].fixture.isLive
-      ? "LIVE"
-      : fmtFixtureDate(upcoming[0].fixture.startTimestamp),
+    nextTime: primary.isLive ? "LIVE" : fmtFixtureNzstTime(primary.startTimestamp),
+    nextTimeTitle: dateLabels.join(" · "),
+    nextDate: fmtFixtureNzstDate(primary.startTimestamp),
     nextDateTitle: dateLabels.join(" · "),
   };
 }
