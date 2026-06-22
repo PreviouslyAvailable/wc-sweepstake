@@ -10,6 +10,7 @@ interface T {
   band: string;
   world_rank: number;
   is_out: boolean;
+  furthest_round: string;
 }
 interface R {
   id: string;
@@ -25,16 +26,6 @@ interface R {
   created_at: string;
 }
 
-const STAGES = [
-  { value: "group", label: "Group stage" },
-  { value: "r32", label: "Round of 32" },
-  { value: "r16", label: "Round of 16" },
-  { value: "qf", label: "Quarter-final" },
-  { value: "sf", label: "Semi-final" },
-  { value: "third", label: "Third place" },
-  { value: "final", label: "Final" },
-];
-
 function supa() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -42,28 +33,15 @@ function supa() {
   );
 }
 
-function CardInput({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <label className="mono flex items-center gap-1 text-xs" style={{ color: "var(--dim)" }}>
-      {label}
-      <input
-        className="field w-10 text-center"
-        inputMode="numeric"
-        placeholder="0"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </label>
-  );
-}
+const ROUND_OPTIONS = [
+  { value: "group", label: "Group" },
+  { value: "r32", label: "R32" },
+  { value: "r16", label: "R16" },
+  { value: "qf", label: "QF" },
+  { value: "sf", label: "SF" },
+  { value: "third", label: "3rd" },
+  { value: "final", label: "Final" },
+];
 
 export default function ResultsDesk() {
   const [admin, setAdmin] = useState(false);
@@ -74,17 +52,8 @@ export default function ResultsDesk() {
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const syncingRef = useRef(false);
-
-  // result form
-  const [stage, setStage] = useState("group");
-  const [teamA, setTeamA] = useState("");
-  const [teamB, setTeamB] = useState("");
-  const [scoreA, setScoreA] = useState("");
-  const [scoreB, setScoreB] = useState("");
-  const [yellowA, setYellowA] = useState("");
-  const [redA, setRedA] = useState("");
-  const [yellowB, setYellowB] = useState("");
-  const [redB, setRedB] = useState("");
+  const [cardSyncMsg, setCardSyncMsg] = useState<string | null>(null);
+  const [cardSyncing, setCardSyncing] = useState(false);
 
   const load = useCallback(async () => {
     const db = supa();
@@ -145,25 +114,24 @@ export default function ResultsDesk() {
     setAdmin(true);
   }
 
-  async function addResult() {
-    setError(null);
-    const res = await fetch("/api/results", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        stage,
-        team_a: teamA, team_b: teamB,
-        score_a: scoreA, score_b: scoreB,
-        yellow_a: yellowA || 0, red_a: redA || 0,
-        yellow_b: yellowB || 0, red_b: redB || 0,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) { setError(data.error); return; }
-    setScoreA(""); setScoreB("");
-    setTeamA(""); setTeamB("");
-    setYellowA(""); setRedA(""); setYellowB(""); setRedB("");
-    setResults((prev) => [data.result, ...prev]);
+  async function runCardSync() {
+    if (cardSyncing) return;
+    setCardSyncing(true);
+    setCardSyncMsg("Re-fetching cards from API…");
+    try {
+      const res = await fetch("/api/sync-cards", { method: "POST" });
+      const data = await res.json();
+      if (data.error) {
+        setCardSyncMsg(`Error: ${data.error}`);
+      } else {
+        setCardSyncMsg(`Done — ${data.updated} updated, ${data.skipped} skipped`);
+        await load();
+      }
+    } catch {
+      setCardSyncMsg("Card sync unavailable");
+    } finally {
+      setCardSyncing(false);
+    }
   }
 
   async function deleteResult(id: string) {
@@ -182,6 +150,22 @@ export default function ResultsDesk() {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ team_id: team.id, is_out: next }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      setError(data.error ?? "Update failed");
+      load();
+    }
+  }
+
+  async function setTeamRound(team: T, furthest_round: string) {
+    setTeams((prev) =>
+      prev.map((t) => (t.id === team.id ? { ...t, furthest_round } : t))
+    );
+    const res = await fetch("/api/progress", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ team_id: team.id, furthest_round }),
     });
     if (!res.ok) {
       const data = await res.json();
@@ -259,12 +243,31 @@ export default function ResultsDesk() {
         )}
       </div>
 
+      {error && <p className="mt-4 text-sm" style={{ color: "var(--red)" }}>{error}</p>}
+
       <section className="ruled-box mt-8">
         <p className="ruled-box-label">Form 1 — match result entry</p>
-        <h2 className="display text-2xl">Filed results</h2>
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 className="display text-2xl">Filed results</h2>
+          <div className="flex items-center gap-3">
+            {cardSyncMsg && (
+              <span className="mono text-xs uppercase" style={{ color: "var(--dim)", letterSpacing: "0.06em" }}>
+                {cardSyncMsg}
+              </span>
+            )}
+            <button
+              className="text-xs underline"
+              style={{ color: "var(--dim)" }}
+              onClick={runCardSync}
+              disabled={cardSyncing}
+            >
+              {cardSyncing ? "re-syncing cards…" : "re-sync all cards"}
+            </button>
+          </div>
+        </div>
         <p className="mt-2 text-xs" style={{ color: "var(--dim)" }}>
           Results sync automatically from the live feed every 15 minutes (and while this desk is open).
-          Manual entry below is a fallback only — cards, scores, and opponents are pulled from the API.
+          Cards, scores, and opponents are pulled from the API.
         </p>
 
         <ul className="mt-5 space-y-1">
@@ -295,112 +298,81 @@ export default function ResultsDesk() {
             </li>
           )}
         </ul>
-
-        <div className="mt-8">
-          <p className="mono text-xs uppercase" style={{ color: "var(--dim)", letterSpacing: "0.06em" }}>
-            Manual override
-          </p>
-        </div>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <select className="field" value={stage} onChange={(e) => setStage(e.target.value)}>
-            {STAGES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-          </select>
-          <select className="field" value={teamA} onChange={(e) => setTeamA(e.target.value)}>
-            <option value="">Team A</option>
-            <optgroup label="Band A">
-              {bandATeams.map((t) => <option key={t.id} value={t.id}>{t.flag} {t.name}</option>)}
-            </optgroup>
-            <optgroup label="Band B">
-              {bandBTeams.map((t) => <option key={t.id} value={t.id}>{t.flag} {t.name}</option>)}
-            </optgroup>
-          </select>
-          <input className="field w-16" inputMode="numeric" placeholder="0" value={scoreA} onChange={(e) => setScoreA(e.target.value)} />
-          <span className="mono" style={{ color: "var(--dim)" }}>–</span>
-          <input className="field w-16" inputMode="numeric" placeholder="0" value={scoreB} onChange={(e) => setScoreB(e.target.value)} />
-          <select className="field" value={teamB} onChange={(e) => setTeamB(e.target.value)}>
-            <option value="">Team B</option>
-            <optgroup label="Band A">
-              {bandATeams.map((t) => <option key={t.id} value={t.id}>{t.flag} {t.name}</option>)}
-            </optgroup>
-            <optgroup label="Band B">
-              {bandBTeams.map((t) => <option key={t.id} value={t.id}>{t.flag} {t.name}</option>)}
-            </optgroup>
-          </select>
-        </div>
-        <div className="mt-2 flex flex-wrap items-center gap-4">
-          <span className="text-xs" style={{ color: "var(--dim)" }}>Cards (normal+ET only):</span>
-          <span className="text-xs" style={{ color: "var(--dim)" }}>
-            {teamA ? teamName(teamA) : "Team A"}:
-          </span>
-          <CardInput label="Y" value={yellowA} onChange={setYellowA} />
-          <CardInput label="R" value={redA} onChange={setRedA} />
-          <span className="mx-2 text-xs" style={{ color: "var(--dim)" }}>|</span>
-          <span className="text-xs" style={{ color: "var(--dim)" }}>
-            {teamB ? teamName(teamB) : "Team B"}:
-          </span>
-          <CardInput label="Y" value={yellowB} onChange={setYellowB} />
-          <CardInput label="R" value={redB} onChange={setRedB} />
-          <button className="btn" onClick={addResult}>Save result</button>
-        </div>
-        <p className="mt-2 text-xs" style={{ color: "var(--dim)" }}>
-          Scores and cards cover normal time + extra time only. Penalty shootouts don&apos;t count.
-          Two yellows = enter 2 yellows (not a red). Straight red = 1 red.
-        </p>
-        {error && <p className="mt-2 text-sm" style={{ color: "var(--red)" }}>{error}</p>}
       </section>
 
       <section className="ruled-box mt-12">
-        <p className="ruled-box-label">Form 2 — elimination record</p>
-        <h2 className="display text-2xl">Elimination desk</h2>
+        <p className="ruled-box-label">Form 2 — round &amp; elimination record</p>
+        <h2 className="display text-2xl">Progress desk</h2>
         <p className="mt-2 text-xs" style={{ color: "var(--dim)" }}>
-          Tick a team out once they&apos;re eliminated. They stop earning points immediately.
+          Round advances automatically from fixtures and group standings. Override the reached round
+          if needed, and tick a team out once eliminated.
         </p>
         <div className="mt-4 grid gap-x-8 gap-y-0 md:grid-cols-2">
           <p className="col-span-full mb-2 text-xs font-semibold uppercase" style={{ color: "var(--yellow)" }}>
             Band A — Contenders
           </p>
           {bandATeams.map((t) => (
-            <label
+            <div
               key={t.id}
-              className="rule-faint flex cursor-pointer items-center gap-3 pb-1.5 text-sm"
+              className="rule-faint flex flex-wrap items-center gap-2 pb-1.5 text-sm"
               style={{ opacity: t.is_out ? 0.55 : 1 }}
             >
               <span className="w-6 text-center">{t.flag}</span>
-              <span style={{ textDecoration: t.is_out ? "line-through" : "none" }}>{t.name}</span>
+              <span style={{ textDecoration: t.is_out ? "line-through" : "none", minWidth: "6rem" }}>{t.name}</span>
               <span className="mono text-xs" style={{ color: "var(--dim)" }}>[{t.world_rank}]</span>
-              <input
-                type="checkbox"
-                className="ml-auto"
-                checked={t.is_out}
-                onChange={() => toggleOut(t)}
-              />
-              <span className="mono w-8 text-xs uppercase" style={{ color: "var(--dim)" }}>
+              <select
+                className="field mono ml-auto text-xs"
+                value={t.furthest_round ?? "group"}
+                disabled={t.is_out}
+                onChange={(e) => setTeamRound(t, e.target.value)}
+                aria-label={`Round reached for ${t.name}`}
+              >
+                {ROUND_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+              <label className="mono flex items-center gap-1 text-xs" style={{ color: "var(--dim)" }}>
+                <input
+                  type="checkbox"
+                  checked={t.is_out}
+                  onChange={() => toggleOut(t)}
+                />
                 {t.is_out ? "out" : "in"}
-              </span>
-            </label>
+              </label>
+            </div>
           ))}
           <p className="col-span-full mb-2 mt-6 text-xs font-semibold uppercase" style={{ color: "var(--yellow)" }}>
             Band B — Wildcards
           </p>
           {bandBTeams.map((t) => (
-            <label
+            <div
               key={t.id}
-              className="rule-faint flex cursor-pointer items-center gap-3 pb-1.5 text-sm"
+              className="rule-faint flex flex-wrap items-center gap-2 pb-1.5 text-sm"
               style={{ opacity: t.is_out ? 0.55 : 1 }}
             >
               <span className="w-6 text-center">{t.flag}</span>
-              <span style={{ textDecoration: t.is_out ? "line-through" : "none" }}>{t.name}</span>
+              <span style={{ textDecoration: t.is_out ? "line-through" : "none", minWidth: "6rem" }}>{t.name}</span>
               <span className="mono text-xs" style={{ color: "var(--dim)" }}>[{t.world_rank}]</span>
-              <input
-                type="checkbox"
-                className="ml-auto"
-                checked={t.is_out}
-                onChange={() => toggleOut(t)}
-              />
-              <span className="mono w-8 text-xs uppercase" style={{ color: "var(--dim)" }}>
+              <select
+                className="field mono ml-auto text-xs"
+                value={t.furthest_round ?? "group"}
+                disabled={t.is_out}
+                onChange={(e) => setTeamRound(t, e.target.value)}
+                aria-label={`Round reached for ${t.name}`}
+              >
+                {ROUND_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+              <label className="mono flex items-center gap-1 text-xs" style={{ color: "var(--dim)" }}>
+                <input
+                  type="checkbox"
+                  checked={t.is_out}
+                  onChange={() => toggleOut(t)}
+                />
                 {t.is_out ? "out" : "in"}
-              </span>
-            </label>
+              </label>
+            </div>
           ))}
         </div>
       </section>

@@ -2,6 +2,17 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { fmtFixtureDate, fmtFixtureKickoff } from "@/lib/match-dates";
+import { formatTipSections } from "@/lib/tooltip-format";
+
+interface Breakdown {
+  goals: number;
+  cleanSheet: number;
+  yellows: number;
+  reds: number;
+  cards: number;
+  giantKilling: number;
+  total: number;
+}
 
 interface TeamSide {
   teamId: string | null;
@@ -11,6 +22,61 @@ interface TeamSide {
   score: number;
   owner: string | null;
   pts: number;
+  breakdown: Breakdown;
+}
+
+function fmtBreakdownLines(bd: Breakdown): string[] {
+  const lines: string[] = [`Goals: +${bd.goals}`];
+  if (bd.cleanSheet) lines.push(`Clean sheet: +${bd.cleanSheet}`);
+  if (bd.yellows || bd.reds) {
+    const cardParts = [];
+    if (bd.yellows) cardParts.push(`${bd.yellows}Y`);
+    if (bd.reds) cardParts.push(`${bd.reds}R`);
+    lines.push(`Cards: ${cardParts.join(" ")} (+${bd.cards})`);
+  }
+  if (bd.giantKilling) lines.push(`Giant-kill: +${bd.giantKilling}`);
+  return lines;
+}
+
+function fmtMatchTooltip(match: Match): string | null {
+  const showScore = match.status === "inprogress" || match.status === "finished";
+  if (!showScore) return null;
+
+  const sections: Array<{ heading: string; lines: string[] }> = [];
+  if (match.home.owner) {
+    sections.push({
+      heading: `${match.home.flag} ${match.home.name} (+${match.home.pts})`,
+      lines: fmtBreakdownLines(match.home.breakdown),
+    });
+  }
+  if (match.away.owner) {
+    sections.push({
+      heading: `${match.away.flag} ${match.away.name} (+${match.away.pts})`,
+      lines: fmtBreakdownLines(match.away.breakdown),
+    });
+  }
+  return sections.length ? formatTipSections(sections) : null;
+}
+
+const CARD_STYLE: React.CSSProperties = {
+  display: "inline-block",
+  width: "5px",
+  height: "8px",
+  borderRadius: "1px",
+};
+
+function MatchCards({ yellows, reds }: { yellows: number; reds: number }) {
+  if (!yellows && !reds) return null;
+  return (
+    <div style={{ display: "flex", gap: "2px", marginTop: "0.1rem" }}>
+      {Array.from({ length: yellows }, (_, i) => (
+        <span key={`y${i}`} style={{ ...CARD_STYLE, background: "var(--yellow)" }} />
+      ))}
+      {Array.from({ length: reds }, (_, i) => (
+        <span key={`r${i}`} style={{ ...CARD_STYLE, background: "var(--red)" }} />
+      ))}
+    </div>
+  );
 }
 
 interface Match {
@@ -95,9 +161,14 @@ function MatchCard({ match }: { match: Match }) {
   const homeWins   = showScore && match.home.score > match.away.score;
   const awayWins   = showScore && match.away.score > match.home.score;
   const hasFoot    = match.home.owner || match.away.owner;
+  const matchTip   = fmtMatchTooltip(match);
 
   return (
-    <div className={`match-card stamp${isLive ? " is-live" : ""}`}>
+    <div
+      className={`match-card stamp${isLive ? " is-live" : ""}${matchTip ? " has-tip" : ""}`}
+      data-tip={matchTip ?? undefined}
+      tabIndex={matchTip ? 0 : undefined}
+    >
       <div className="match-card-head">
         <span className="round-label">{match.round || "WORLD CUP 2026"}</span>
         <StatusBadge match={match} />
@@ -108,6 +179,7 @@ function MatchCard({ match }: { match: Match }) {
           <span className="match-team-flag">{match.home.flag}</span>
           <span className="match-team-name">{match.home.name}</span>
           <span className="match-team-rank">#{match.home.worldRank}</span>
+          {isFinished && <MatchCards yellows={match.home.breakdown.yellows} reds={match.home.breakdown.reds} />}
         </div>
 
         <div className="match-center">
@@ -133,6 +205,7 @@ function MatchCard({ match }: { match: Match }) {
           <span className="match-team-flag">{match.away.flag}</span>
           <span className="match-team-name">{match.away.name}</span>
           <span className="match-team-rank">#{match.away.worldRank}</span>
+          {isFinished && <MatchCards yellows={match.away.breakdown.yellows} reds={match.away.breakdown.reds} />}
         </div>
       </div>
 
@@ -305,7 +378,7 @@ export default function LivePage() {
       {/* Annotation footnote — patent-clerk voice */}
       {!loading && hasAny && (finished.length > 0 || live.length > 0) && (
         <p className="mono" style={{ marginTop: "3rem", fontSize: "0.56rem", color: "var(--cream-18)", letterSpacing: "0.07em" }}>
-          FIG. 2 — PREVIEW PTS = GOALS + CLEAN SHEET + GIANT-KILLING · CARD PTS FILE AFTER AUTO-SYNC
+          FIG. 2 — PTS = GOALS + CLEAN SHEET + CARDS + GIANT-KILLING · HOVER A MATCH CARD FOR THIS GAME&apos;S BREAKDOWN · LIVE MATCH CARD PTS FILED ON FULL TIME
         </p>
       )}
     </div>

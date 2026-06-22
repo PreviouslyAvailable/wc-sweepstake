@@ -11,6 +11,7 @@ export interface WcFixture {
   startTimestamp: number;
   homeId: string | null;
   awayId: string | null;
+  roundName: string;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -23,6 +24,7 @@ function parseEvent(ev: any): WcFixture | null {
     startTimestamp: (ev.startTimestamp ?? 0) as number,
     homeId: NAME_TO_ID[homeApiName] ?? null,
     awayId: NAME_TO_ID[awayApiName] ?? null,
+    roundName: (ev.roundInfo?.name ?? ev.tournament?.name ?? "") as string,
   };
 }
 

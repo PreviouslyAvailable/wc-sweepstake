@@ -61,6 +61,40 @@ export interface StandingRow {
   total: number;
 }
 
+/** Cumulative points for one team across all filed results. */
+export function aggregateTeamScore(
+  teamId: string,
+  teams: Team[],
+  results: Result[]
+): MatchBreakdown {
+  const teamById = new Map(teams.map((t) => [t.id, t]));
+  const breakdown: MatchBreakdown = { goals: 0, cleanSheet: 0, cards: 0, giantKilling: 0, total: 0 };
+  for (const result of results) {
+    const m = matchBreakdownForTeam(teamId, result, teamById);
+    breakdown.goals += m.goals;
+    breakdown.cleanSheet += m.cleanSheet;
+    breakdown.cards += m.cards;
+    breakdown.giantKilling += m.giantKilling;
+    breakdown.total += m.total;
+  }
+  return breakdown;
+}
+
+import { formatTipLines, formatTipSections } from "@/lib/tooltip-format";
+
+export function formatBreakdownTooltip(breakdown: MatchBreakdown, label?: string | null): string {
+  const lines = [
+    `Goals: ${breakdown.goals}`,
+    `Clean sheets: ${breakdown.cleanSheet}`,
+    `Cards: ${breakdown.cards}`,
+    breakdown.giantKilling ? `Giant-killing: ${breakdown.giantKilling}` : null,
+  ];
+  if (label) {
+    return formatTipSections([{ heading: label, lines }]);
+  }
+  return formatTipLines(...lines);
+}
+
 export function matchBreakdownForTeam(
   teamId: string,
   result: Result,
@@ -115,15 +149,7 @@ export function computeStandings(
       .filter((t): t is Team => Boolean(t));
 
     const teamScores: TeamScore[] = myTeams.map((team) => {
-      const breakdown: MatchBreakdown = { goals: 0, cleanSheet: 0, cards: 0, giantKilling: 0, total: 0 };
-      for (const result of results) {
-        const m = matchBreakdownForTeam(team.id, result, teamById);
-        breakdown.goals += m.goals;
-        breakdown.cleanSheet += m.cleanSheet;
-        breakdown.cards += m.cards;
-        breakdown.giantKilling += m.giantKilling;
-        breakdown.total += m.total;
-      }
+      const breakdown = aggregateTeamScore(team.id, teams, results);
       return { team, breakdown, total: breakdown.total };
     });
 
@@ -163,15 +189,7 @@ export function computeUnclaimedTeamScores(
     const team = teamById.get(teamId);
     if (!team) continue;
 
-    const breakdown: MatchBreakdown = { goals: 0, cleanSheet: 0, cards: 0, giantKilling: 0, total: 0 };
-    for (const result of results) {
-      const m = matchBreakdownForTeam(teamId, result, teamById);
-      breakdown.goals += m.goals;
-      breakdown.cleanSheet += m.cleanSheet;
-      breakdown.cards += m.cards;
-      breakdown.giantKilling += m.giantKilling;
-      breakdown.total += m.total;
-    }
+    const breakdown = aggregateTeamScore(teamId, teams, results);
     if (breakdown.total > 0) {
       scores.push({ team, breakdown, total: breakdown.total });
     }

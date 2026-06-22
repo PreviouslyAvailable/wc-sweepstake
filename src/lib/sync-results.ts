@@ -1,21 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { NAME_TO_ID, OPPONENT_TEAMS } from "@/lib/team-names";
+import { ftScoresFromSportEvent } from "@/lib/sportapi-scores";
+import { roundFromName } from "@/lib/tournament-rounds";
 
 const HOST = "sportapi7.p.rapidapi.com";
 const WC_START = "2026-06-11";
 const LOOKBACK_DAYS = 7;
-
-function nameToStage(name: string): string {
-  const n = name.toLowerCase();
-  if (n.includes("group")) return "group";
-  if (n.includes("round of 32")) return "r32";
-  if (n.includes("round of 16")) return "r16";
-  if (n.includes("quarter")) return "qf";
-  if (n.includes("semi")) return "sf";
-  if (n.includes("3rd") || n.includes("third")) return "third";
-  if (n.includes("final")) return "final";
-  return "group";
-}
 
 function dateRange(from: string, to: string): string[] {
   const dates: string[] = [];
@@ -38,6 +28,119 @@ function apif(path: string, key: string) {
     headers: { "X-RapidAPI-Key": key, "X-RapidAPI-Host": HOST },
     cache: "no-store",
   });
+}
+
+interface CardCounts { yellow_a: number; red_a: number; yellow_b: number; red_b: number }
+
+/**
+ * Parse card totals from the statistics endpoint.
+ *
+ * The statistics API correctly separates:
+ *   "Yellow cards"      — first-yellow cautions only
+ *   "Yellow-red cards"  — second yellow (causing red) → per rules, counts as +1 yellow each
+ *   "Red cards"         — straight reds only → +3 each
+ *
+ * Returns null if the statistics endpoint has no card data.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseCardsFromStats(statistics: any[]): CardCounts | null {
+  const period = statistics.find((p) => p.period === "ALL") ?? statistics[0];
+  if (!period) return null;
+
+  let yellow_a = 0, red_a = 0, yellow_b = 0, red_b = 0;
+  let found = false;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const group of (period.groups ?? []) as any[]) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const item of (group.statisticsItems ?? []) as any[]) {
+      const name: string = (item.name ?? "").toLowerCase();
+      const h = parseInt(item.home ?? "0", 10) || 0;
+      const a = parseInt(item.away ?? "0", 10) || 0;
+      if (name === "yellow cards") {
+        yellow_a += h; yellow_b += a; found = true;
+      } else if (name === "yellow-red cards") {
+        // Yellow-red = second yellow causing a red → counts as +1 yellow per the rules
+        yellow_a += h; yellow_b += a; found = true;
+      } else if (name === "red cards") {
+        red_a += h; red_b += a; found = true;
+      }
+    }
+  }
+
+  return found ? { yellow_a, red_a, yellow_b, red_b } : null;
+}
+
+/**
+ * Parse card totals from the incidents endpoint as a fallback.
+ *
+ * Fixes vs the naive approach:
+ *  1. Only counts incidents where teamSide is explicitly "home" or "away"
+ *  2. Deduplicates the spurious `red` event the API fires alongside `yellowRed` —
+ *     one `red` per `yellowRed` on the same side is skipped so it isn't
+ *     double-counted as a straight red.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseCardsFromIncidents(incidents: any[]): CardCounts {
+  // First pass: count yellowRed incidents per side so we can skip their paired `red` events
+  let yellowRedHome = 0, yellowRedAway = 0;
+  for (const inc of incidents) {
+    if (inc.incidentType !== "card" || inc.incidentClass !== "yellowRed") continue;
+    if (inc.teamSide === "home") yellowRedHome++;
+    else if (inc.teamSide === "away") yellowRedAway++;
+  }
+
+  let yellow_a = 0, red_a = 0, yellow_b = 0, red_b = 0;
+  let skipRedHome = yellowRedHome, skipRedAway = yellowRedAway;
+
+  for (const inc of incidents) {
+    if (inc.incidentType !== "card") continue;
+    const cls: string = inc.incidentClass ?? "";
+    const side: string = inc.teamSide ?? "";
+    if (side !== "home" && side !== "away") continue;
+    const isHome = side === "home";
+
+    if (cls === "yellow" || cls === "yellowRed") {
+      if (isHome) yellow_a++; else yellow_b++;
+    } else if (cls === "red") {
+      if (isHome) {
+        if (skipRedHome > 0) skipRedHome--; else red_a++;
+      } else {
+        if (skipRedAway > 0) skipRedAway--; else red_b++;
+      }
+    }
+  }
+
+  return { yellow_a, red_a, yellow_b, red_b };
+}
+
+/**
+ * Fetch card counts for a SportAPI event.
+ * Tries the statistics endpoint first (more reliable), falls back to incidents.
+ */
+async function fetchCardsForEvent(eventId: string, apiKey: string): Promise<CardCounts | null> {
+  try {
+    const statsRes = await apif(`api/v1/event/${eventId}/statistics`, apiKey);
+    if (statsRes.ok) {
+      const { statistics = [] } = await statsRes.json();
+      const cards = parseCardsFromStats(statistics);
+      if (cards) return cards;
+    }
+  } catch {
+    // fall through
+  }
+
+  try {
+    const incRes = await apif(`api/v1/event/${eventId}/incidents`, apiKey);
+    if (incRes.ok) {
+      const { incidents = [] } = await incRes.json();
+      return parseCardsFromIncidents(incidents);
+    }
+  } catch {
+    // fall through
+  }
+
+  return null;
 }
 
 async function ensureOpponentTeam(
@@ -131,40 +234,16 @@ export async function syncResultsFromApi(
     const { data: already } = await db.from("results").select("id").eq("note", note).maybeSingle();
     if (already) continue;
 
-    const scoreA =
-      (ev.homeScore?.normaltime ?? ev.homeScore?.current ?? 0) +
-      (ev.homeScore?.overtime ?? 0);
-    const scoreB =
-      (ev.awayScore?.normaltime ?? ev.awayScore?.current ?? 0) +
-      (ev.awayScore?.overtime ?? 0);
+    const { scoreA, scoreB } = ftScoresFromSportEvent(ev);
 
     const roundName: string = ev.roundInfo?.name ?? ev.tournament?.name ?? "";
-    const stage = nameToStage(roundName);
+    const stage = roundFromName(roundName);
 
-    let yellow_a = 0, red_a = 0, yellow_b = 0, red_b = 0;
-    try {
-      const incRes = await apif(`api/v1/event/${ev.id}/incidents`, apiKey);
-      if (incRes.ok) {
-        const { incidents = [] } = await incRes.json();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        for (const inc of incidents as any[]) {
-          if (inc.incidentType !== "card") continue;
-          const cls: string = inc.incidentClass ?? "";
-          const isHome = inc.teamSide === "home";
-          const isYellow = cls === "yellow" || cls === "yellowRed";
-          const isDirectRed = cls === "red";
-          if (isHome) {
-            if (isYellow) yellow_a++;
-            else if (isDirectRed) red_a++;
-          } else {
-            if (isYellow) yellow_b++;
-            else if (isDirectRed) red_b++;
-          }
-        }
-      }
-    } catch {
+    const cards = await fetchCardsForEvent(String(ev.id), apiKey);
+    if (!cards) {
       warnings.push(`Cards unavailable for event ${ev.id} — saved with 0 cards`);
     }
+    const { yellow_a = 0, red_a = 0, yellow_b = 0, red_b = 0 } = cards ?? {};
 
     const { error } = await db.from("results").insert({
       team_a: homeId,
@@ -187,4 +266,51 @@ export async function syncResultsFromApi(
   await db.from("settings").upsert({ key: "sportapi_last_date", value: today });
 
   return { synced, checked: dates.length, skipped, warnings };
+}
+
+export interface CardResyncOutcome {
+  updated: number;
+  skipped: number;
+  warnings: string[];
+}
+
+export async function resyncCardsFromApi(
+  db: SupabaseClient,
+  apiKey: string
+): Promise<CardResyncOutcome> {
+  const { data: results } = await db
+    .from("results")
+    .select("id, note")
+    .like("note", "sport:%");
+
+  if (!results?.length) return { updated: 0, skipped: 0, warnings: [] };
+
+  let updated = 0, skipped = 0;
+  const warnings: string[] = [];
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const result of results as any[]) {
+    const eventId: string = result.note.slice(6);
+    const cards = await fetchCardsForEvent(eventId, apiKey);
+
+    if (!cards) {
+      warnings.push(`Cards unavailable for event ${eventId}`);
+      skipped++;
+      continue;
+    }
+
+    const { error } = await db
+      .from("results")
+      .update(cards)
+      .eq("id", result.id);
+
+    if (error) {
+      warnings.push(`Update failed for event ${eventId}: ${error.message}`);
+      skipped++;
+    } else {
+      updated++;
+    }
+  }
+
+  return { updated, skipped, warnings };
 }

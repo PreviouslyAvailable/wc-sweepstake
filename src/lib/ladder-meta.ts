@@ -6,7 +6,9 @@ import type {
   Team,
 } from "@/lib/scoring";
 import { fmtFixtureNzstDate, fmtFixtureNzstDateTime, fmtFixtureNzstTime } from "@/lib/match-dates";
+import { formatTipLines } from "@/lib/tooltip-format";
 import type { WcFixture } from "@/lib/wc-fixtures";
+import { isGroupRoundName } from "@/lib/tournament-rounds";
 
 export interface TeamNextFixture {
   teamFlag: string;
@@ -17,6 +19,7 @@ export interface TeamNextFixture {
 
 export interface LadderRowMeta {
   gamesPlayed: number;
+  gamesLeft: number;
   gamesTooltip: string;
   nextLabel: string;
   nextTitle: string;
@@ -64,6 +67,25 @@ function fixtureForTeam(
   };
 }
 
+export function buildGamesLeftByTeam(fixtures: WcFixture[]): Map<string, number> {
+  const remaining = fixtures.filter(
+    (f) => f.status === "notstarted" || f.status === "inprogress"
+  );
+  // During the group stage, only count group-stage fixtures so that already-scheduled
+  // knockout games (where teams have clinched their spot) don't inflate the count.
+  // Once no group-stage games remain, fall back to all remaining fixtures.
+  const groupStage = remaining.filter((f) => isGroupRoundName(f.roundName));
+  const toCount = groupStage.length > 0 ? groupStage : remaining;
+  const counts = new Map<string, number>();
+  for (const f of toCount) {
+    for (const teamId of [f.homeId, f.awayId]) {
+      if (!teamId) continue;
+      counts.set(teamId, (counts.get(teamId) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
 export function buildNextFixtureByTeam(
   fixtures: WcFixture[],
   ownerByTeamId: Map<string, string>,
@@ -100,15 +122,22 @@ export function buildNextFixtureByTeam(
 export function ladderRowMeta(
   row: StandingRow,
   results: Result[],
-  nextByTeam: Map<string, TeamNextFixture>
+  nextByTeam: Map<string, TeamNextFixture>,
+  gamesLeftByTeam: Map<string, number>
 ): LadderRowMeta {
   let gamesPlayed = 0;
+  let gamesLeft = 0;
   const gameParts: string[] = [];
 
   for (const { team } of row.teams) {
     const played = gamesPlayedForTeam(team.id, results);
+    const left = gamesLeftByTeam.get(team.id) ?? 0;
     gamesPlayed += played;
-    if (played > 0) gameParts.push(`${team.flag} ${team.name}: ${played}`);
+    if (!team.is_out) gamesLeft += left;
+    const matchLine = team.is_out
+      ? `${team.flag} ${team.name}: ${played}p · done`
+      : `${team.flag} ${team.name}: ${played}p · ${left} left`;
+    gameParts.push(matchLine);
   }
 
   const alive = row.teams.filter(({ team }) => !team.is_out);
@@ -123,7 +152,8 @@ export function ladderRowMeta(
   if (!alive.length) {
     return {
       gamesPlayed,
-      gamesTooltip: gameParts.join(" · ") || "No matches filed",
+      gamesLeft: 0,
+      gamesTooltip: gameParts.length ? formatTipLines(...gameParts) : formatTipLines("No matches filed"),
       nextLabel: "Out",
       nextTitle: "Both drawcards eliminated",
       nextTime: "—",
@@ -136,7 +166,8 @@ export function ladderRowMeta(
   if (!upcoming.length) {
     return {
       gamesPlayed,
-      gamesTooltip: gameParts.join(" · ") || "No matches filed",
+      gamesLeft,
+      gamesTooltip: gameParts.length ? formatTipLines(...gameParts) : formatTipLines("No matches filed"),
       nextLabel: "—",
       nextTitle: "No upcoming fixture on the sheet",
       nextTime: "—",
@@ -157,12 +188,13 @@ export function ladderRowMeta(
 
   return {
     gamesPlayed,
+    gamesLeft,
     gamesTooltip: gameParts.join(" · ") || "No matches filed",
     nextLabel: labels[0],
-    nextTitle: labels.join(" · "),
+    nextTitle: formatTipLines(...labels),
     nextTime: primary.isLive ? "LIVE" : fmtFixtureNzstTime(primary.startTimestamp),
-    nextTimeTitle: dateLabels.join(" · "),
+    nextTimeTitle: dateLabels.length ? formatTipLines(...dateLabels) : "",
     nextDate: fmtFixtureNzstDate(primary.startTimestamp),
-    nextDateTitle: dateLabels.join(" · "),
+    nextDateTitle: dateLabels.length ? formatTipLines(...dateLabels) : "",
   };
 }

@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { supaAnon } from "@/lib/supabase";
 import { NAME_TO_ID } from "@/lib/team-names";
 import { liveFixtureDates } from "@/lib/tournament-dates";
+import {
+  matchBreakdownForTeam,
+  type Result,
+  type Team,
+} from "@/lib/scoring";
+import { ftScoresFromSportEvent, liveScoresFromSportEvent } from "@/lib/sportapi-scores";
 
 // Cache the SportAPI response server-side — all page polls within 60s share one API call
 export const revalidate = 60;
@@ -28,15 +34,47 @@ function statusLabel(ev: any): string {
   return "LIVE";
 }
 
-function matchPts(myScore: number, theirScore: number, myRank: number, theirRank: number): number {
+export interface Breakdown {
+  goals: number;
+  cleanSheet: number;
+  yellows: number;
+  reds: number;
+  cards: number;
+  giantKilling: number;
+  total: number;
+}
+
+function breakdownWithCards(
+  teamId: string,
+  result: Result,
+  teamById: Map<string, Team>
+): Breakdown {
+  const m = matchBreakdownForTeam(teamId, result, teamById);
+  const isA = result.team_a === teamId;
+  return {
+    ...m,
+    yellows: isA ? (result.yellow_a ?? 0) : (result.yellow_b ?? 0),
+    reds: isA ? (result.red_a ?? 0) : (result.red_b ?? 0),
+  };
+}
+
+function breakdownFromApi(
+  myScore: number,
+  theirScore: number,
+  myRank: number,
+  theirRank: number,
+  myYellows = 0,
+  myReds = 0
+): Breakdown {
   const goals = myScore;
-  const cs = theirScore === 0 ? 3 : 0;
-  let gk = 0;
+  const cleanSheet = theirScore === 0 ? 3 : 0;
+  const cards = myYellows * 1 + myReds * 3;
+  let giantKilling = 0;
   if (myScore > theirScore) {
     const gap = myRank - theirRank;
-    if (gap > 0) gk = Math.floor(gap / 10);
+    if (gap > 0) giantKilling = Math.floor(gap / 10);
   }
-  return goals + cs + gk;
+  return { goals, cleanSheet, yellows: myYellows, reds: myReds, cards, giantKilling, total: goals + cleanSheet + cards + giantKilling };
 }
 
 export async function GET() {
@@ -96,16 +134,39 @@ export async function GET() {
 
   // Sweepstake enrichment
   const db = supaAnon();
-  const [{ data: assignments }, { data: participants }, { data: teams }] = await Promise.all([
+
+  const finishedNotes = rawEvents
+    .filter((ev) => ev.status?.type === "finished")
+    .map((ev) => `sport:${ev.id}`);
+
+  const [
+    { data: assignments },
+    { data: participants },
+    { data: teams },
+    { data: dbResults },
+    { data: allResults },
+  ] = await Promise.all([
     db.from("assignments").select("participant_id, team_id"),
     db.from("participants").select("id, name"),
-    db.from("teams").select("id, name, flag, world_rank"),
+    db.from("teams").select("*"),
+    finishedNotes.length
+      ? db.from("results").select("note, yellow_a, red_a, yellow_b, red_b").in("note", finishedNotes)
+      : Promise.resolve({ data: [] }),
+    db.from("results").select("*"),
   ]);
 
   const participantById = new Map((participants ?? []).map((p) => [p.id, p.name as string]));
   const teamById = new Map((teams ?? []).map((t) => [t.id, t]));
   const ownerByTeamId = new Map(
     (assignments ?? []).map((a) => [a.team_id, participantById.get(a.participant_id) ?? null])
+  );
+  const cardsByNote = new Map(
+    (dbResults ?? []).map((r: { note: string; yellow_a: number; red_a: number; yellow_b: number; red_b: number }) => [r.note, r])
+  );
+  const resultsByNote = new Map(
+    (allResults ?? [])
+      .filter((r): r is Result & { note: string } => typeof r.note === "string")
+      .map((r) => [r.note, r])
   );
 
   const matches = rawEvents.map((ev) => {
@@ -116,23 +177,40 @@ export async function GET() {
     const homeTeam = homeId ? teamById.get(homeId) : null;
     const awayTeam = awayId ? teamById.get(awayId) : null;
 
-    // For finished PEN: show score at end of normal+ET, not the shootout
-    const isPen =
-      ev.status?.description?.toLowerCase().includes("pen") ||
-      ev.homeScore?.penalties != null;
     const isFinished = ev.status?.type === "finished";
-
-    const homeScore = isFinished && isPen
-      ? (ev.homeScore?.normaltime ?? 0) + (ev.homeScore?.overtime ?? 0)
-      : (ev.homeScore?.current ?? 0);
-    const awayScore = isFinished && isPen
-      ? (ev.awayScore?.normaltime ?? 0) + (ev.awayScore?.overtime ?? 0)
-      : (ev.awayScore?.current ?? 0);
 
     const homeRank = (homeTeam as { world_rank?: number } | null)?.world_rank ?? 99;
     const awayRank = (awayTeam as { world_rank?: number } | null)?.world_rank ?? 99;
 
     const roundName: string = ev.roundInfo?.name ?? ev.tournament?.name ?? "";
+
+    const note = `sport:${ev.id}`;
+    const filedResult = isFinished ? resultsByNote.get(note) : null;
+
+    let homeScore: number;
+    let awayScore: number;
+    let homeBd: Breakdown;
+    let awayBd: Breakdown;
+
+    if (filedResult && homeId && awayId) {
+      homeScore = filedResult.score_a;
+      awayScore = filedResult.score_b;
+      homeBd = breakdownWithCards(homeId, filedResult, teamById);
+      awayBd = breakdownWithCards(awayId, filedResult, teamById);
+    } else {
+      const scores = isFinished ? ftScoresFromSportEvent(ev) : liveScoresFromSportEvent(ev);
+      homeScore = scores.scoreA;
+      awayScore = scores.scoreB;
+      const dbCards = isFinished ? cardsByNote.get(note) : null;
+      homeBd = breakdownFromApi(
+        homeScore, awayScore, homeRank, awayRank,
+        dbCards?.yellow_a ?? 0, dbCards?.red_a ?? 0
+      );
+      awayBd = breakdownFromApi(
+        awayScore, homeScore, awayRank, homeRank,
+        dbCards?.yellow_b ?? 0, dbCards?.red_b ?? 0
+      );
+    }
 
     return {
       id: ev.id as number,
@@ -147,7 +225,8 @@ export async function GET() {
         worldRank: homeRank,
         score: homeScore,
         owner: homeId ? (ownerByTeamId.get(homeId) ?? null) : null,
-        pts: matchPts(homeScore, awayScore, homeRank, awayRank),
+        pts: homeBd.total,
+        breakdown: homeBd,
       },
       away: {
         teamId: awayId ?? null,
@@ -156,7 +235,8 @@ export async function GET() {
         worldRank: awayRank,
         score: awayScore,
         owner: awayId ? (ownerByTeamId.get(awayId) ?? null) : null,
-        pts: matchPts(awayScore, homeScore, awayRank, homeRank),
+        pts: awayBd.total,
+        breakdown: awayBd,
       },
     };
   });

@@ -1,20 +1,51 @@
 import { supaAnon } from "@/lib/supabase";
 import {
   buildNextFixtureByTeam,
+  buildGamesLeftByTeam,
   buildOwnerByTeamId,
   ladderRowMeta,
 } from "@/lib/ladder-meta";
 import {
   computeStandings,
   computeUnclaimedTeamScores,
+  formatBreakdownTooltip,
   Participant,
   Assignment,
   Team,
   Result,
+  StandingRow,
 } from "@/lib/scoring";
 import { fetchWcFixtures } from "@/lib/wc-fixtures";
+import { buildTournamentStatusByTeam } from "@/lib/tournament-status";
+
+import { formatTipSections } from "@/lib/tooltip-format";
 
 export const dynamic = "force-dynamic";
+
+function holderPtsTooltip(row: StandingRow): string {
+  const breakdown = {
+    goals: row.teams.reduce((s, t) => s + t.breakdown.goals, 0),
+    cleanSheet: row.teams.reduce((s, t) => s + t.breakdown.cleanSheet, 0),
+    cards: row.teams.reduce((s, t) => s + t.breakdown.cards, 0),
+    giantKilling: row.teams.reduce((s, t) => s + t.breakdown.giantKilling, 0),
+    total: row.total,
+  };
+  return formatTipSections([
+    {
+      heading: `${row.participant.name} — ${row.total} pts`,
+      lines: [
+        ...row.teams.map(
+          ({ team, total }) =>
+            `${team.flag} ${team.name} +${total}${team.is_out ? " (out)" : ""}`
+        ),
+        `Goals: ${breakdown.goals}`,
+        `Clean sheets: ${breakdown.cleanSheet}`,
+        `Cards: ${breakdown.cards}`,
+        breakdown.giantKilling ? `Giant-killing: ${breakdown.giantKilling}` : null,
+      ],
+    },
+  ]);
+}
 
 export default async function Ladder() {
   const db = supaAnon();
@@ -58,6 +89,8 @@ export default async function Ladder() {
   }
   const ownerByTeamId = buildOwnerByTeamId(assignments, participants);
   const nextByTeam = buildNextFixtureByTeam(fixtures, ownerByTeamId, teamById);
+  const gamesLeftByTeam = buildGamesLeftByTeam(fixtures);
+  const statusByTeam = buildTournamentStatusByTeam({ teams, results, fixtures });
 
   const issued = new Date().toLocaleDateString("en-GB", {
     day: "2-digit", month: "short", year: "numeric",
@@ -85,13 +118,14 @@ export default async function Ladder() {
             <span>Date</span>
             <span>NZST</span>
           </div>
+          <span className="ladder-num ladder-gp">Games left to play</span>
           <span className="ladder-num ladder-gp">Games played</span>
           <span className="ladder-num">Alive</span>
           <span className="ladder-num">Pts</span>
         </div>
         <ol>
           {standings.map((row, i) => {
-            const meta = ladderRowMeta(row, results, nextByTeam);
+            const meta = ladderRowMeta(row, results, nextByTeam, gamesLeftByTeam);
             return (
               <li key={row.participant.id} className="ladder-row">
                 <span className="index-num">{String(i + 1).padStart(2, "0")}</span>
@@ -105,47 +139,66 @@ export default async function Ladder() {
                     )}
                   </span>
                   <span className="ladder-drawcards text-sm">
-                    {row.teams.map(({ team, breakdown, total }) => (
-                      <span
-                        key={team.id}
-                        title={[
+                    {row.teams.map(({ team, breakdown, total }) => {
+                      const status = statusByTeam.get(team.id);
+                      const tip = formatBreakdownTooltip(
+                        breakdown,
+                        [
                           `${team.name} [${team.world_rank}] — ${total} pts`,
-                          `Goals: ${breakdown.goals}`,
-                          `Clean sheets: ${breakdown.cleanSheet}`,
-                          `Cards: ${breakdown.cards}`,
-                          breakdown.giantKilling ? `Giant-killing: ${breakdown.giantKilling}` : null,
+                          status ? `${status.label} · ${status.detail}` : null,
                           team.is_out ? "(eliminated)" : null,
                         ]
                           .filter(Boolean)
-                          .join(" · ")}
+                          .join(" · ")
+                      );
+                      return (
+                      <span
+                        key={team.id}
+                        className="has-tip ladder-team-chip"
+                        data-tip={tip}
+                        tabIndex={0}
                         style={{ opacity: team.is_out ? 0.35 : 1 }}
                       >
-                        {team.flag}
+                        <span aria-hidden>{team.flag}</span>
+                        {status && !team.is_out ? (
+                          <span
+                            className={`mono round-chip-sm${status.secured ? " round-chip-secured" : ""}${status.fate === "bubble" ? " round-chip-bubble" : ""}`}
+                          >
+                            {status.chip}
+                          </span>
+                        ) : null}
                       </span>
-                    ))}
+                      );
+                    })}
                   </span>
                 </div>
                 <div className="ladder-fixture">
-                  <span className="ladder-next" title={meta.nextTitle}>
+                  <span className="ladder-next has-tip" data-tip={meta.nextTitle} tabIndex={0}>
                     {meta.nextLabel}
                   </span>
-                  <span
-                    className="ladder-date tabular-nums"
-                    title={meta.nextDateTitle || undefined}
-                  >
-                    {meta.nextDate}
-                  </span>
-                  <span
-                    className="ladder-time tabular-nums"
-                    title={meta.nextTimeTitle || undefined}
-                  >
-                    {meta.nextTime}
-                  </span>
+                  {meta.nextDateTitle ? (
+                    <span className="ladder-date tabular-nums has-tip" data-tip={meta.nextDateTitle} tabIndex={0}>
+                      {meta.nextDate}
+                    </span>
+                  ) : (
+                    <span className="ladder-date tabular-nums">{meta.nextDate}</span>
+                  )}
+                  {meta.nextTimeTitle ? (
+                    <span className="ladder-time tabular-nums has-tip" data-tip={meta.nextTimeTitle} tabIndex={0}>
+                      {meta.nextTime}
+                    </span>
+                  ) : (
+                    <span className="ladder-time tabular-nums">{meta.nextTime}</span>
+                  )}
                 </div>
+                <span className="ladder-num text-sm" style={{ color: "var(--dim)" }}>
+                  {meta.gamesLeft}
+                </span>
                 <span
-                  className="ladder-num text-sm"
+                  className="ladder-num text-sm has-tip"
                   style={{ color: "var(--dim)" }}
-                  title={meta.gamesTooltip}
+                  data-tip={meta.gamesTooltip}
+                  tabIndex={0}
                 >
                   {meta.gamesPlayed}
                 </span>
@@ -153,8 +206,10 @@ export default async function Ladder() {
                   {row.alive}
                 </span>
                 <span
-                  className="ladder-num text-2xl"
+                  className="ladder-num text-2xl has-tip"
                   style={{ color: "var(--yellow)" }}
+                  data-tip={holderPtsTooltip(row)}
+                  tabIndex={0}
                 >
                   {row.total}
                 </span>
@@ -174,20 +229,18 @@ export default async function Ladder() {
             Opponents and held-out draw teams · scored under the schedule but not on any holder card
           </p>
           <ul>
-            {unclaimed.map(({ team, breakdown, total }) => (
+            {unclaimed.map(({ team, breakdown, total }) => {
+              const tip = formatBreakdownTooltip(
+                breakdown,
+                `${team.name} [${team.world_rank}] — ${total} pts`
+              );
+              return (
               <li
                 key={team.id}
-                className="index-row"
+                className="index-row has-tip"
                 style={{ borderColor: "var(--rule)" }}
-                title={[
-                  `${team.name} [${team.world_rank}] — ${total} pts`,
-                  `Goals: ${breakdown.goals}`,
-                  `Clean sheets: ${breakdown.cleanSheet}`,
-                  `Cards: ${breakdown.cards}`,
-                  breakdown.giantKilling ? `Giant-killing: ${breakdown.giantKilling}` : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
+                data-tip={tip}
+                tabIndex={0}
               >
                 <span className="text-lg">{team.flag}</span>
                 <span className="display text-lg">{team.name}</span>
@@ -198,7 +251,8 @@ export default async function Ladder() {
                   {total}
                 </span>
               </li>
-            ))}
+              );
+            })}
           </ul>
         </section>
       )}
