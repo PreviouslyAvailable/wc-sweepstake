@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { fmtFixtureDate, fmtFixtureKickoff } from "@/lib/match-dates";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { fmtFixtureDate, fmtFixtureKickoff, fmtNzstTime } from "@/lib/match-dates";
 import { formatPtsBreakdownLines } from "@/lib/scoring";
 import { formatTipSections } from "@/lib/tooltip-format";
 
@@ -157,6 +157,7 @@ function MatchCard({ match }: { match: Match }) {
   const awayWins   = showScore && match.away.score > match.home.score;
   const hasFoot    = match.home.owner || match.away.owner;
   const matchTip   = fmtMatchTooltip(match);
+  const showCards  = showScore;
 
   return (
     <div
@@ -174,7 +175,7 @@ function MatchCard({ match }: { match: Match }) {
           <span className="match-team-flag">{match.home.flag}</span>
           <span className="match-team-name">{match.home.name}</span>
           <span className="match-team-rank">#{match.home.worldRank}</span>
-          {isFinished && <MatchCards yellows={match.home.breakdown.yellows} reds={match.home.breakdown.reds} />}
+          {showCards && <MatchCards yellows={match.home.breakdown.yellows} reds={match.home.breakdown.reds} />}
         </div>
 
         <div className="match-center">
@@ -200,7 +201,7 @@ function MatchCard({ match }: { match: Match }) {
           <span className="match-team-flag">{match.away.flag}</span>
           <span className="match-team-name">{match.away.name}</span>
           <span className="match-team-rank">#{match.away.worldRank}</span>
-          {isFinished && <MatchCards yellows={match.away.breakdown.yellows} reds={match.away.breakdown.reds} />}
+          {showCards && <MatchCards yellows={match.away.breakdown.yellows} reds={match.away.breakdown.reds} />}
         </div>
       </div>
 
@@ -265,26 +266,46 @@ export default function LivePage() {
   const [loading, setLoading]     = useState(true);
   const [err, setErr]             = useState<string | null>(null);
   const [refreshed, setRefreshed] = useState<Date | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const refresh = useCallback(() => {
-    fetch("/api/live")
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    fetch("/api/live", { signal: controller.signal })
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() as Promise<LiveData>; })
-      .then((d) => { setData(d); setRefreshed(new Date()); setErr(null); })
-      .catch((e: Error) => setErr(e.message))
-      .finally(() => setLoading(false));
+      .then((d) => {
+        if (controller.signal.aborted) return;
+        setData(d);
+        setRefreshed(new Date());
+        setErr(null);
+      })
+      .catch((e: Error) => {
+        if (e.name === "AbortError") return;
+        setErr(e.message);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
   }, []);
+
+  const isLiveNow = (data?.matches.filter((m) => m.status === "inprogress").length ?? 0) > 0;
+  const pollMs = isLiveNow ? 30_000 : 90_000;
 
   useEffect(() => {
     refresh();
-    const t = setInterval(refresh, 90_000);
-    return () => clearInterval(t);
-  }, [refresh]);
+    const t = setInterval(refresh, pollMs);
+    return () => {
+      clearInterval(t);
+      abortRef.current?.abort();
+    };
+  }, [refresh, pollMs]);
 
   const live     = data?.matches.filter((m) => m.status === "inprogress") ?? [];
   const finished = data?.matches.filter((m) => m.status === "finished")   ?? [];
   const upcoming = data?.matches.filter((m) => m.status === "notstarted") ?? [];
   const hasAny   = live.length + finished.length + upcoming.length > 0;
-  const isLiveNow = live.length > 0;
 
   /* Perimeter chant text — never resolves neatly */
   const chantText = "MATCHKIT · WORLD CUP 2026 · OFFICIAL SWEEPSTAKE RECORD";
@@ -327,11 +348,11 @@ export default function LivePage() {
           <div style={{ textAlign: "right" }}>
             {refreshed && (
               <p className="mono" style={{ fontSize: "0.56rem", color: "var(--cream-18)", letterSpacing: "0.08em" }}>
-                AS OF {refreshed.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                AS OF {fmtNzstTime(refreshed)} NZST
               </p>
             )}
             <p className="mono" style={{ fontSize: "0.52rem", color: "var(--cream-18)", opacity: 0.6, marginTop: "0.2rem", letterSpacing: "0.08em" }}>
-              AUTO-REFRESHES · 90S
+              AUTO-REFRESHES · {isLiveNow ? "30S" : "90S"}
             </p>
           </div>
         </div>

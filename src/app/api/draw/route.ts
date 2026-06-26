@@ -57,11 +57,17 @@ export async function POST() {
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
   const participantOrder = order.map((p) => p.id);
-  await Promise.all([
+  const [lockRes, revealRes, excludedRes] = await Promise.all([
     db.from("settings").upsert({ key: "draw_locked", value: true }),
     db.from("settings").upsert({ key: "draw_reveal_order", value: participantOrder }),
     db.from("settings").upsert({ key: "draw_excluded_teams", value: pool.excluded }),
   ]);
+  const settingsError = lockRes.error ?? revealRes.error ?? excludedRes.error;
+  if (settingsError) {
+    await db.from("assignments").delete().neq("team_id", "");
+    return NextResponse.json({ error: `Draw lock failed: ${settingsError.message}` }, { status: 500 });
+  }
+
   return NextResponse.json({
     ok: true,
     dealt: rows.length,

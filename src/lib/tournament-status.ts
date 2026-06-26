@@ -1,6 +1,10 @@
 import type { Result, Team } from "@/lib/scoring";
 import type { WcFixture } from "@/lib/wc-fixtures";
 import {
+  lostKnockoutRound,
+  wonKnockoutRound,
+} from "@/lib/knockout-result";
+import {
   analyzeGroupFate,
   groupMatchesRemaining,
   statsForTeam,
@@ -114,24 +118,6 @@ function highestPlayedRound(teamId: string, results: Result[]): TournamentRound 
     if (order.indexOf(stage) > order.indexOf(highest)) highest = stage;
   }
   return highest;
-}
-
-function lostKnockoutRound(teamId: string, results: Result[]): TournamentRound | null {
-  for (const r of results) {
-    if (r.stage === "group") continue;
-    if (r.team_a === teamId && r.score_a < r.score_b) return parseFurthestRound(r.stage);
-    if (r.team_b === teamId && r.score_b < r.score_a) return parseFurthestRound(r.stage);
-  }
-  return null;
-}
-
-function wonKnockoutRound(teamId: string, round: TournamentRound, results: Result[]): boolean {
-  for (const r of results) {
-    if (parseFurthestRound(r.stage) !== round) continue;
-    if (r.team_a === teamId && r.score_a > r.score_b) return true;
-    if (r.team_b === teamId && r.score_b > r.score_a) return true;
-  }
-  return false;
 }
 
 function advancedToRound(
@@ -363,4 +349,29 @@ export function buildTournamentStatusByTeam(
     );
   }
   return map;
+}
+
+/** Derive DB progress fields from results + fixtures (ignores stored is_out / furthest_round). */
+export function deriveTeamProgressFields(
+  team: Team,
+  results: Result[],
+  fixtures: WcFixture[],
+  worldRanks: Map<string, number>
+): { is_out: boolean; furthest_round: TournamentRound } {
+  const baseline: Team = { ...team, is_out: false, furthest_round: "group" };
+  const status = computeTeamTournamentStatus(baseline, results, fixtures, worldRanks);
+
+  if (status.fate === "out") {
+    const loss = lostKnockoutRound(team.id, results);
+    return { is_out: true, furthest_round: loss ?? "group" };
+  }
+
+  let furthest: TournamentRound = status.secured ?? "group";
+  const played = highestPlayedRound(team.id, results);
+  if (played !== "group") furthest = maxRound(furthest, played);
+  const advanced = advancedToRound(team.id, results);
+  if (advanced) furthest = maxRound(furthest, advanced);
+  if (status.playing !== "group") furthest = maxRound(furthest, status.playing);
+
+  return { is_out: false, furthest_round: furthest };
 }

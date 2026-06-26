@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
-import { roundIndex, type TournamentRound } from "@/lib/tournament-rounds";
 
 interface T {
   id: string;
@@ -44,14 +43,6 @@ const ROUND_OPTIONS = [
   { value: "final", label: "Final" },
 ];
 
-function stageOrder(stage: string): number {
-  return roundIndex(
-    ROUND_OPTIONS.some((o) => o.value === stage)
-      ? (stage as TournamentRound)
-      : "group"
-  );
-}
-
 export default function ResultsDesk() {
   const [admin, setAdmin] = useState(false);
   const [passcode, setPasscode] = useState("");
@@ -62,14 +53,15 @@ export default function ResultsDesk() {
   const [syncWarnings, setSyncWarnings] = useState<string[]>([]);
   const [syncing, setSyncing] = useState(false);
   const syncingRef = useRef(false);
-  const [cardSyncMsg, setCardSyncMsg] = useState<string | null>(null);
-  const [cardSyncing, setCardSyncing] = useState(false);
+  const [editingCardsId, setEditingCardsId] = useState<string | null>(null);
+  const [cardDraft, setCardDraft] = useState({ yellow_a: 0, red_a: 0, yellow_b: 0, red_b: 0 });
+  const [savingCards, setSavingCards] = useState(false);
 
   const load = useCallback(async () => {
     const db = supa();
     const [t, r, auth] = await Promise.all([
       db.from("teams").select("*").order("band").order("world_rank"),
-      db.from("results").select("*").order("created_at", { ascending: true }),
+      db.from("results").select("*").order("created_at", { ascending: false }),
       fetch("/api/login").then((res) => res.json()),
     ]);
     setTeams((t.data ?? []) as T[]);
@@ -79,11 +71,7 @@ export default function ResultsDesk() {
 
   const sortedResults = useMemo(
     () =>
-      [...results].sort(
-        (a, b) =>
-          stageOrder(a.stage) - stageOrder(b.stage) ||
-          a.created_at.localeCompare(b.created_at)
-      ),
+      [...results].sort((a, b) => b.created_at.localeCompare(a.created_at)),
     [results]
   );
 
@@ -94,7 +82,7 @@ export default function ResultsDesk() {
     setSyncMsg("Pulling results from the World Cup feed…");
     setSyncWarnings([]);
     try {
-      const r = await fetch("/api/sync");
+      const r = await fetch("/api/sync", { method: "POST" });
       const data = await r.json();
       if (r.status === 401) {
         setAdmin(false);
@@ -105,19 +93,32 @@ export default function ResultsDesk() {
         setSyncMsg(`Sync error: ${data.error}`);
       } else if (typeof data.onFile === "number" && typeof data.finishedInFeed === "number") {
         const gap = data.finishedInFeed - data.onFile;
+        const progressNote =
+          typeof data.progressUpdated === "number" && data.progressUpdated > 0
+            ? ` · ${data.progressUpdated} team${data.progressUpdated === 1 ? "" : "s"} progress updated`
+            : "";
+        const tail = progressNote;
         if (gap > 0) {
           setSyncMsg(
-            `${data.onFile} of ${data.finishedInFeed} finished matches on file${data.synced ? ` · ${data.synced} just added` : ""}`
+            `${data.onFile} of ${data.finishedInFeed} finished matches on file${data.synced ? ` · ${data.synced} just added` : ""}${tail}`
           );
         } else if (data.synced > 0) {
-          setSyncMsg(`Synced ${data.synced} result${data.synced === 1 ? "" : "s"} · ${data.onFile} on file`);
+          setSyncMsg(`Synced ${data.synced} result${data.synced === 1 ? "" : "s"} · ${data.onFile} on file${tail}`);
         } else {
-          setSyncMsg(`${data.onFile} results on file · up to date`);
+          setSyncMsg(`${data.onFile} results on file · up to date${tail}`);
         }
       } else if (data.synced > 0) {
-        setSyncMsg(`Synced ${data.synced} new result${data.synced === 1 ? "" : "s"}`);
+        const progressNote =
+          typeof data.progressUpdated === "number" && data.progressUpdated > 0
+            ? ` · ${data.progressUpdated} team${data.progressUpdated === 1 ? "" : "s"} progress updated`
+            : "";
+        setSyncMsg(`Synced ${data.synced} new result${data.synced === 1 ? "" : "s"}${progressNote}`);
       } else if (data.message) {
         setSyncMsg(data.message);
+      } else if (typeof data.progressUpdated === "number" && data.progressUpdated > 0) {
+        setSyncMsg(
+          `Progress updated for ${data.progressUpdated} team${data.progressUpdated === 1 ? "" : "s"} · up to date`
+        );
       } else {
         setSyncMsg("Up to date");
       }
@@ -156,31 +157,6 @@ export default function ResultsDesk() {
       return;
     }
     setAdmin(true);
-  }
-
-  async function runCardSync() {
-    if (cardSyncing) return;
-    setCardSyncing(true);
-    setCardSyncMsg("Re-fetching cards from API…");
-    try {
-      const res = await fetch("/api/sync-cards", { method: "POST" });
-      const data = await res.json();
-      if (res.status === 401) {
-        setAdmin(false);
-        setCardSyncMsg("Session expired — enter the steward passcode again.");
-        return;
-      }
-      if (data.error) {
-        setCardSyncMsg(`Error: ${data.error}`);
-      } else {
-        setCardSyncMsg(`Done — ${data.updated} updated, ${data.skipped} skipped`);
-        await load();
-      }
-    } catch {
-      setCardSyncMsg("Card sync unavailable");
-    } finally {
-      setCardSyncing(false);
-    }
   }
 
   async function toggleOut(team: T) {
@@ -228,6 +204,74 @@ export default function ResultsDesk() {
     return parts.join(" · ");
   };
 
+  function openCardEdit(r: R) {
+    if (editingCardsId === r.id) {
+      setEditingCardsId(null);
+      return;
+    }
+    setEditingCardsId(r.id);
+    setCardDraft({
+      yellow_a: r.yellow_a,
+      red_a: r.red_a,
+      yellow_b: r.yellow_b,
+      red_b: r.red_b,
+    });
+    setError(null);
+  }
+
+  async function saveCards(resultId: string) {
+    setSavingCards(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/results", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: resultId, ...cardDraft }),
+      });
+      const data = await res.json();
+      if (res.status === 401) {
+        setAdmin(false);
+        return;
+      }
+      if (!res.ok) {
+        setError(data.error ?? "Could not save cards");
+        return;
+      }
+      setResults((prev) =>
+        prev.map((r) => (r.id === resultId ? { ...r, ...cardDraft } : r))
+      );
+      setEditingCardsId(null);
+    } catch {
+      setError("Could not save cards");
+    } finally {
+      setSavingCards(false);
+    }
+  }
+
+  function cardField(
+    label: string,
+    key: keyof typeof cardDraft,
+    value: number,
+    onChange: (n: number) => void
+  ) {
+    return (
+      <label className="flex flex-col gap-0.5">
+        <span className="mono text-xs uppercase" style={{ color: "var(--dim)", letterSpacing: "0.06em" }}>
+          {label}
+        </span>
+        <input
+          className="field mono w-14 text-center text-xs"
+          type="number"
+          min={0}
+          step={1}
+          value={value}
+          onChange={(e) => onChange(Math.max(0, parseInt(e.target.value, 10) || 0))}
+          onClick={(e) => e.stopPropagation()}
+        />
+      </label>
+    );
+  }
+
   const bandATeams = teams.filter((t) => t.band === "A");
   const bandBTeams = teams.filter((t) => t.band === "B");
 
@@ -243,7 +287,7 @@ export default function ResultsDesk() {
           </h1>
           <p className="mt-2 text-xs" style={{ color: "var(--dim)" }}>
             {admin
-              ? "Results sync automatically from the World Cup feed when you open this page, then every five minutes."
+              ? "Results and progress sync from the World Cup feed when you open this page, then every five minutes."
               : "Enter the steward passcode to open the results desk."}
           </p>
         </div>
@@ -302,41 +346,102 @@ export default function ResultsDesk() {
         <p className="ruled-box-label">Form 1 — filed record</p>
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <h2 className="display text-2xl">Filed results</h2>
-          <div className="flex items-center gap-3">
-            {cardSyncMsg && (
-              <span className="mono text-xs uppercase" style={{ color: "var(--dim)", letterSpacing: "0.06em" }}>
-                {cardSyncMsg}
-              </span>
-            )}
-            <button
-              className="text-xs underline"
-              style={{ color: "var(--dim)" }}
-              onClick={runCardSync}
-              disabled={cardSyncing}
-            >
-              {cardSyncing ? "re-syncing cards…" : "re-sync all cards"}
-            </button>
-          </div>
         </div>
         <p className="mt-2 text-xs" style={{ color: "var(--dim)" }}>
-          Every finished match from the feed. Card counts can be pulled from SportAPI if enabled.
+          Click a row to file yellow and red card counts. Scores sync from the feed; cards are
+          steward-entered unless API card sync is enabled.
         </p>
 
-        <ul className="mt-5 space-y-1">
-          {sortedResults.map((r) => (
-            <li key={r.id} className="rule-faint flex flex-wrap items-center gap-3 pb-1.5 text-sm">
-              <span className="mono text-xs uppercase" style={{ color: "var(--dim)" }}>{r.stage}</span>
-              <span>{teamName(r.team_a)}</span>
-              <span className="mono font-bold">{r.score_a}–{r.score_b}</span>
-              <span>{teamName(r.team_b)}</span>
-              {(r.yellow_a || r.red_a || r.yellow_b || r.red_b) ? (
-                <span className="text-xs" style={{ color: "var(--dim)" }}>{cardSummary(r)}</span>
-              ) : null}
-              <span className="mono ml-auto text-xs" style={{ color: "var(--dim)", letterSpacing: "0.06em" }}>
-                FILED {new Date(r.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }).toUpperCase()}
-              </span>
-            </li>
-          ))}
+        <ul className="mt-5 space-y-0">
+          {sortedResults.map((r) => {
+            const editing = editingCardsId === r.id;
+            const teamA = teams.find((t) => t.id === r.team_a);
+            const teamB = teams.find((t) => t.id === r.team_b);
+            return (
+              <li key={r.id} className="rule-faint">
+                <button
+                  type="button"
+                  className="flex w-full flex-wrap items-center gap-3 pb-1.5 pt-1.5 text-left text-sm"
+                  style={{
+                    cursor: "pointer",
+                    background: editing ? "var(--surface-raised)" : "transparent",
+                    border: "none",
+                    color: "inherit",
+                    font: "inherit",
+                  }}
+                  onClick={() => openCardEdit(r)}
+                  aria-expanded={editing}
+                >
+                  <span className="mono text-xs uppercase" style={{ color: "var(--dim)" }}>{r.stage}</span>
+                  <span>{teamName(r.team_a)}</span>
+                  <span className="mono font-bold">{r.score_a}–{r.score_b}</span>
+                  <span>{teamName(r.team_b)}</span>
+                  {(r.yellow_a || r.red_a || r.yellow_b || r.red_b) ? (
+                    <span className="text-xs" style={{ color: "var(--dim)" }}>{cardSummary(r)}</span>
+                  ) : (
+                    <span className="mono text-xs" style={{ color: "var(--cream-18)", letterSpacing: "0.06em" }}>
+                      + ADD CARDS
+                    </span>
+                  )}
+                  <span className="mono ml-auto text-xs" style={{ color: "var(--dim)", letterSpacing: "0.06em" }}>
+                    FILED {new Date(r.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }).toUpperCase()}
+                  </span>
+                </button>
+                {editing && (
+                  <div
+                    className="flex flex-wrap items-end gap-4 px-1 pb-3 pt-1"
+                    style={{ borderTop: "1px solid var(--cream-10)" }}
+                  >
+                    <div>
+                      <p className="mono mb-2 text-xs uppercase" style={{ color: "var(--dim)", letterSpacing: "0.08em" }}>
+                        {teamA?.flag} {teamA?.name ?? r.team_a}
+                      </p>
+                      <div className="flex gap-3">
+                        {cardField("Yellow", "yellow_a", cardDraft.yellow_a, (n) =>
+                          setCardDraft((d) => ({ ...d, yellow_a: n }))
+                        )}
+                        {cardField("Red", "red_a", cardDraft.red_a, (n) =>
+                          setCardDraft((d) => ({ ...d, red_a: n }))
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="mono mb-2 text-xs uppercase" style={{ color: "var(--dim)", letterSpacing: "0.08em" }}>
+                        {teamB?.flag} {teamB?.name ?? r.team_b}
+                      </p>
+                      <div className="flex gap-3">
+                        {cardField("Yellow", "yellow_b", cardDraft.yellow_b, (n) =>
+                          setCardDraft((d) => ({ ...d, yellow_b: n }))
+                        )}
+                        {cardField("Red", "red_b", cardDraft.red_b, (n) =>
+                          setCardDraft((d) => ({ ...d, red_b: n }))
+                        )}
+                      </div>
+                    </div>
+                    <div className="ml-auto flex gap-2">
+                      <button
+                        type="button"
+                        className="text-xs underline"
+                        style={{ color: "var(--dim)" }}
+                        onClick={() => setEditingCardsId(null)}
+                        disabled={savingCards}
+                      >
+                        cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="btn text-xs"
+                        onClick={() => saveCards(r.id)}
+                        disabled={savingCards}
+                      >
+                        {savingCards ? "filing…" : "file cards"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </li>
+            );
+          })}
           {!results.length && (
             <li className="text-sm" style={{ color: "var(--dim)" }}>
               {syncing ? "SETTING THE TYPE…" : "No results on file yet."}
@@ -349,8 +454,8 @@ export default function ResultsDesk() {
         <p className="ruled-box-label">Form 2 — round &amp; elimination record</p>
         <h2 className="display text-2xl">Progress desk</h2>
         <p className="mt-2 text-xs" style={{ color: "var(--dim)" }}>
-          Round advances automatically from fixtures and group standings. Override the reached round
-          if needed, and tick a team out once eliminated.
+          Round and elimination status updates automatically after each sync. Override a reached
+          round or out flag here only when the feed needs a manual correction.
         </p>
         <div className="mt-4 grid gap-x-8 gap-y-0 md:grid-cols-2">
           <p className="col-span-full mb-2 text-xs font-semibold uppercase" style={{ color: "var(--yellow)" }}>

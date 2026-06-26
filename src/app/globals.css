@@ -412,6 +412,57 @@ body {
   text-align: right;
 }
 
+@media (max-width: 900px) {
+  .ladder-head {
+    display: none;
+  }
+  .ladder-row {
+    grid-template-columns: 2rem minmax(0, 1fr);
+    grid-template-areas:
+      "idx holder"
+      "idx fixture"
+      "idx stats";
+    row-gap: 0.5rem;
+    padding: 1rem 0;
+  }
+  .ladder-row > .index-num { grid-area: idx; }
+  .ladder-row > .ladder-holder-block { grid-area: holder; }
+  .ladder-row > .ladder-fixture { grid-area: fixture; }
+  .ladder-row > .ladder-num {
+    grid-area: stats;
+    text-align: left;
+    display: inline;
+    margin-right: 1rem;
+  }
+  .ladder-row > .ladder-num::before {
+    font-size: 0.5rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-right: 0.35rem;
+  }
+  .ladder-row > .ladder-num:nth-of-type(2)::before { content: "LEFT "; }
+  .ladder-row > .ladder-num:nth-of-type(3)::before { content: "PLAYED "; }
+  .ladder-row > .ladder-num:nth-of-type(4)::before { content: "ALIVE "; }
+  .ladder-row > .ladder-num:nth-of-type(5)::before { content: "PTS "; }
+  .ladder-row > .ladder-num:last-child {
+    display: block;
+    font-size: 1.5rem;
+    color: var(--yellow);
+    margin-top: 0.25rem;
+  }
+  .ladder-row > .ladder-num:last-child::before {
+    display: inline;
+  }
+}
+
+.ladder-row:has(.has-tip:hover),
+.ladder-row:has(.has-tip:focus-visible) {
+  position: relative;
+  z-index: 2;
+  overflow: visible;
+}
+
 /* ── Programme fixture sheet ───────────────────────── */
 .fixture-sheet-filter {
   display: flex;

@@ -7,9 +7,11 @@ export interface SportEventScores {
 
 /** Full-time scores for sweepstake scoring — normal time + ET, never penalties. */
 export function ftScoresFromSportEvent(ev: SportEventScores): { scoreA: number; scoreB: number } {
+  const desc = (ev.status?.description ?? "").toLowerCase();
   const isPen =
-    ev.status?.description?.toLowerCase().includes("pen") ||
-    ev.homeScore?.penalties != null;
+    desc.includes("pen") ||
+    ev.homeScore?.penalties != null ||
+    ev.awayScore?.penalties != null;
 
   if (isPen) {
     return {

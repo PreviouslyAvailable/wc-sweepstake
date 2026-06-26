@@ -150,9 +150,18 @@ function compareTiedTeams(
   a: string,
   b: string,
   tiedIds: readonly string[],
+  groupTeamIds: readonly string[],
   groupResults: Result[],
   worldRanks: Map<string, number>
 ): number {
+  // FIFA order after points: full-group GD, full-group GF, then mini-league H2H.
+  const fullA = statsForTeam(a, groupTeamIds, groupResults);
+  const fullB = statsForTeam(b, groupTeamIds, groupResults);
+  if (fullA.goalDifference !== fullB.goalDifference) {
+    return fullB.goalDifference - fullA.goalDifference;
+  }
+  if (fullA.goalsFor !== fullB.goalsFor) return fullB.goalsFor - fullA.goalsFor;
+
   const h2h = h2hStats(tiedIds, groupResults);
   const ha = h2h.get(a) ?? emptyStats(a);
   const hb = h2h.get(b) ?? emptyStats(b);
@@ -160,13 +169,6 @@ function compareTiedTeams(
   if (ha.points !== hb.points) return hb.points - ha.points;
   if (ha.goalDifference !== hb.goalDifference) return hb.goalDifference - ha.goalDifference;
   if (ha.goalsFor !== hb.goalsFor) return hb.goalsFor - ha.goalsFor;
-
-  const fullA = statsForTeam(a, tiedIds, groupResults);
-  const fullB = statsForTeam(b, tiedIds, groupResults);
-  if (fullA.goalDifference !== fullB.goalDifference) {
-    return fullB.goalDifference - fullA.goalDifference;
-  }
-  if (fullA.goalsFor !== fullB.goalsFor) return fullB.goalsFor - fullA.goalsFor;
 
   const rankA = worldRanks.get(a) ?? 999;
   const rankB = worldRanks.get(b) ?? 999;
@@ -201,7 +203,7 @@ export function sortGroupTable(
       continue;
     }
     const ordered = [...tied].sort((a, b) =>
-      compareTiedTeams(a, b, tied, groupResults, worldRanks)
+      compareTiedTeams(a, b, tied, groupTeamIds, groupResults, worldRanks)
     );
     sorted.push(...ordered);
   }

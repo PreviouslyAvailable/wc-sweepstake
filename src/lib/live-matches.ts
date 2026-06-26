@@ -6,6 +6,7 @@ import {
   type Result,
   type Team,
 } from "@/lib/scoring";
+import { dedupeResults } from "@/lib/result-dedup";
 import { ftScoresFromSportEvent, liveScoresFromSportEvent } from "@/lib/sportapi-scores";
 import type { SportEvent } from "@/lib/sportapi-events";
 import { livePageFixtureDates } from "@/lib/tournament-dates";
@@ -16,6 +17,7 @@ import {
   type WorldCup26Game,
 } from "@/lib/worldcup26";
 import { NAME_TO_ID } from "@/lib/team-names";
+import { roundShortLabel, roundFromName, isGroupRoundName } from "@/lib/tournament-rounds";
 
 export type { LiveMatchBreakdown as Breakdown };
 
@@ -80,6 +82,17 @@ function statusLabelFromEvent(ev: SportEvent): string {
   return "LIVE";
 }
 
+function alignScoresToFixture(
+  scoreA: number,
+  scoreB: number,
+  apiHomeId: string | null,
+  fixtureHomeId: string | null
+): { homeScore: number; awayScore: number } {
+  if (!apiHomeId || !fixtureHomeId) return { homeScore: scoreA, awayScore: scoreB };
+  if (apiHomeId === fixtureHomeId) return { homeScore: scoreA, awayScore: scoreB };
+  return { homeScore: scoreB, awayScore: scoreA };
+}
+
 function sortFixtures(fixtures: WcFixture[]): WcFixture[] {
   return [...fixtures].sort((a, b) => {
     const order: Record<string, number> = { inprogress: 0, notstarted: 1, finished: 2 };
@@ -101,13 +114,14 @@ export async function buildLiveMatches(input: {
   const now = input.now ?? new Date();
   const dates = livePageFixtureDates(now);
 
-  const { fixtures, sources } = await fetchWcFixturesBundle({
-    results: input.results,
-    teams: input.teams,
-    dates,
-  });
+  const { fixtures, sportEventsById, worldCupGamesById, worldCupGamesByPair } =
+    await fetchWcFixturesBundle({
+      results: input.results,
+      teams: input.teams,
+      dates,
+    });
 
-  const { sportEventsById: apiEventsById, worldCupGamesById: gamesById } = sources;
+  const apiEventsById = sportEventsById;
   const sortedFixtures = sortFixtures(fixtures);
 
   const participantById = new Map(input.participants.map((p) => [p.id, p.name]));
@@ -116,11 +130,12 @@ export async function buildLiveMatches(input: {
     input.assignments.map((a) => [a.team_id, participantById.get(a.participant_id) ?? null])
   );
 
+  const deduped = dedupeResults(input.results);
   const resultsByPair = new Map(
-    input.results.map((r) => [fixturePairKey(r.team_a, r.team_b), r])
+    deduped.map((r) => [fixturePairKey(r.team_a, r.team_b), r])
   );
   const resultsByNote = new Map(
-    input.results
+    deduped
       .filter((r): r is Result & { note: string } => typeof r.note === "string")
       .map((r) => [r.note, r])
   );
@@ -133,20 +148,26 @@ export async function buildLiveMatches(input: {
     const homeApiName = homeTeam?.name ?? f.homeLabel ?? homeId ?? "TBD";
     const awayApiName = awayTeam?.name ?? f.awayLabel ?? awayId ?? "TBD";
 
-    const isFinished = f.status === "finished";
-    const isLive = f.status === "inprogress";
+    const feedFinished = f.status === "finished";
+    const feedLive = f.status === "inprogress";
     const apiEv = apiEventsById.get(f.id);
-    const wcGame = gamesById.get(f.id);
+    const wcGame =
+      (f.wc26GameId ? worldCupGamesById.get(f.wc26GameId) : undefined) ??
+      (homeId && awayId ? worldCupGamesByPair.get(fixturePairKey(homeId, awayId)) : undefined) ??
+      worldCupGamesById.get(f.id);
 
     const homeRank = homeTeam?.world_rank ?? 99;
     const awayRank = awayTeam?.world_rank ?? 99;
     const roundName = f.roundName;
+    const roundLabel = isGroupRoundName(roundName)
+      ? ""
+      : roundShortLabel(roundFromName(roundName));
 
     const pair = homeId && awayId ? fixturePairKey(homeId, awayId) : "";
     const filedResult =
       (homeId && awayId ? resultsByPair.get(pair) : null) ??
-      resultsByNote.get(worldCup26Note(f.id)) ??
-      (isFinished ? resultsByNote.get(`sport:${f.id}`) : null);
+      resultsByNote.get(worldCup26Note(f.wc26GameId ?? f.id)) ??
+      (feedFinished ? resultsByNote.get(`sport:${f.id}`) : null);
 
     let homeScore = 0;
     let awayScore = 0;
@@ -159,21 +180,21 @@ export async function buildLiveMatches(input: {
       awayScore = homeIsA ? filedResult.score_b : filedResult.score_a;
       homeBd = liveBreakdownForTeam(homeId, filedResult, teamById);
       awayBd = liveBreakdownForTeam(awayId, filedResult, teamById);
-    } else if (wcGame && (isFinished || isLive)) {
+    } else if (wcGame && (feedFinished || feedLive)) {
       const apiHomeId = NAME_TO_ID[wcGame.home_team_name_en ?? ""] ?? null;
-      const homeIsApiHome = apiHomeId === homeId;
-      homeScore = homeIsApiHome
-        ? Number(wcGame.home_score) || 0
-        : Number(wcGame.away_score) || 0;
-      awayScore = homeIsApiHome
-        ? Number(wcGame.away_score) || 0
-        : Number(wcGame.home_score) || 0;
+      const rawHome = Number(wcGame.home_score) || 0;
+      const rawAway = Number(wcGame.away_score) || 0;
+      const aligned = alignScoresToFixture(rawHome, rawAway, apiHomeId, homeId);
+      homeScore = aligned.homeScore;
+      awayScore = aligned.awayScore;
       homeBd = matchBreakdownFromScores(homeScore, awayScore, homeRank, awayRank);
       awayBd = matchBreakdownFromScores(awayScore, homeScore, awayRank, homeRank);
-    } else if (apiEv && (isFinished || isLive)) {
-      const scores = isFinished ? ftScoresFromSportEvent(apiEv) : liveScoresFromSportEvent(apiEv);
-      homeScore = scores.scoreA;
-      awayScore = scores.scoreB;
+    } else if (apiEv && (feedFinished || feedLive)) {
+      const scores = feedFinished ? ftScoresFromSportEvent(apiEv) : liveScoresFromSportEvent(apiEv);
+      const apiHomeId = NAME_TO_ID[apiEv.homeTeam?.name ?? ""] ?? null;
+      const aligned = alignScoresToFixture(scores.scoreA, scores.scoreB, apiHomeId, homeId);
+      homeScore = aligned.homeScore;
+      awayScore = aligned.awayScore;
       homeBd = matchBreakdownFromScores(homeScore, awayScore, homeRank, awayRank);
       awayBd = matchBreakdownFromScores(awayScore, homeScore, awayRank, homeRank);
     } else {
@@ -181,21 +202,29 @@ export async function buildLiveMatches(input: {
       awayBd = EMPTY_BREAKDOWN;
     }
 
-    const status = filedResult ? "finished" : f.status;
-    const statusLabel = filedResult
-      ? "FT"
-      : wcGame
-        ? statusLabelFromGame(wcGame)
-        : apiEv
-          ? statusLabelFromEvent(apiEv)
-          : statusLabelFromFixture(f.status);
+    const status =
+      filedResult && !feedLive ? "finished" : f.status;
+    const statusLabel =
+      status === "finished"
+        ? filedResult
+          ? "FT"
+          : wcGame
+            ? statusLabelFromGame(wcGame)
+            : apiEv
+              ? statusLabelFromEvent(apiEv)
+              : statusLabelFromFixture(f.status)
+        : wcGame
+          ? statusLabelFromGame(wcGame)
+          : apiEv
+            ? statusLabelFromEvent(apiEv)
+            : statusLabelFromFixture(f.status);
 
     return {
       id: f.id,
       status,
       statusLabel,
       startTimestamp: f.startTimestamp,
-      round: roundName,
+      round: roundLabel ? `${roundLabel} · ${roundName}` : roundName,
       home: {
         teamId: homeId,
         name: homeApiName,

@@ -2,6 +2,7 @@ import Link from "next/link";
 import FixtureSheet from "@/components/FixtureSheet";
 import { supaAnon } from "@/lib/supabase";
 import { buildUpcomingHolderFixtures } from "@/lib/holder-fixtures";
+import { fmtIssuedDate } from "@/lib/match-dates";
 import {
   computeStandings,
   Participant,
@@ -9,6 +10,7 @@ import {
   Team,
   Result,
 } from "@/lib/scoring";
+import { buildTournamentStatusByTeam, isTeamEliminated } from "@/lib/tournament-status";
 import { fetchWcFixtures } from "@/lib/wc-fixtures";
 
 export const dynamic = "force-dynamic";
@@ -64,26 +66,32 @@ export default async function ProgrammeCover() {
   const drawn = assignments.length > 0;
   const standings = drawn ? computeStandings(participants, assignments, teams, results) : [];
   const leader = standings[0];
-  const alive = teams.filter((tm) => !tm.is_out).length;
 
   let upcomingFixtures: ReturnType<typeof buildUpcomingHolderFixtures> = [];
+  let fixtureError = false;
+  let statusByTeam = buildTournamentStatusByTeam({ teams, results, fixtures: [] });
+
   if (drawn) {
     try {
       const fixtures = await fetchWcFixtures({ results, teams });
+      statusByTeam = buildTournamentStatusByTeam({ teams, results, fixtures });
       upcomingFixtures = buildUpcomingHolderFixtures(
         fixtures,
         assignments,
         participants,
-        teams
+        teams,
+        results
       );
     } catch {
-      // Fixture sheet unavailable — programme still renders
+      fixtureError = true;
     }
   }
 
-  const issued = new Date().toLocaleDateString("en-GB", {
-    day: "2-digit", month: "long", year: "numeric",
-  }).toUpperCase();
+  const alive = teams.filter(
+    (tm) => !isTeamEliminated(tm, statusByTeam.get(tm.id))
+  ).length;
+
+  const issued = fmtIssuedDate();
 
   return (
     <div>
@@ -143,10 +151,19 @@ export default async function ProgrammeCover() {
               <h2 className="display text-2xl" style={{ marginBottom: "0.75rem" }}>
                 Coming <span className="intruder">u</span>p
               </h2>
-              <FixtureSheet
-                fixtures={upcomingFixtures}
-                holders={participants.map((p) => p.name).sort((a, b) => a.localeCompare(b))}
-              />
+              {fixtureError ? (
+                <p className="mono text-xs" style={{ color: "var(--dim)", letterSpacing: "0.06em" }}>
+                  Fixture sheet unavailable — standings and ladder still on file.{" "}
+                  <Link href="/live" className="underline" style={{ color: "var(--cream)" }}>
+                    Scoreboard
+                  </Link>
+                </p>
+              ) : (
+                <FixtureSheet
+                  fixtures={upcomingFixtures}
+                  holders={participants.map((p) => p.name).sort((a, b) => a.localeCompare(b))}
+                />
+              )}
             </section>
           )}
 

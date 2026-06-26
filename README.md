@@ -63,9 +63,9 @@ open, and all writes are behind the steward passcode.
 Read access is public via Supabase RLS select-only policies. All writes go
 through Next.js API routes using the service-role key, gated by a shared steward
 passcode stored in an httpOnly cookie (`/api/results`, `/api/progress`,
-`/api/sync-cards`, `/api/draw`, `/api/participants`). The cron sync route
-(`/api/sync`) accepts either the steward cookie or Vercel's `CRON_SECRET` bearer
-token. That's the right weight for an office comp — no accounts, no OAuth,
+`/api/sync-cards`, `/api/draw`, `/api/participants`). Cron sync is `GET /api/sync`
+with Vercel's `CRON_SECRET` bearer; stewards trigger `POST /api/sync` from the
+results desk with the session cookie. That's the right weight for an office comp — no accounts, no OAuth,
 nothing to forget. Don't reuse a sensitive passcode, and don't put anything
 private in the database.
 
@@ -73,8 +73,11 @@ private in the database.
 
 - **worldcup26.ir** (default) — free live scores and fixtures; no API key.
   Disable with `WORLDCUP26_DISABLED=true`.
+- **API-Football** (optional) — card counts via `API_FOOTBALL_KEY` from
+  [api-football.com](https://www.api-football.com/). Synced automatically after
+  each results pull; free tier is enough for card-only use.
 - **SportAPI** (optional fallback) — RapidAPI Sofascore feed when worldcup26 is
-  off and `SPORTAPI_ENABLED=true`. Used for card counts via `/api/sync-cards`.
+  off and `SPORTAPI_ENABLED=true`. Card fallback if API-Football is not set.
 
 ## Ideas for v2
 

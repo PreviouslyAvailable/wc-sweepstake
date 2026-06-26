@@ -120,6 +120,7 @@ export function worldCup26GameToFixture(
 
   return {
     id: Number(game.id),
+    wc26GameId: Number(game.id),
     status: gameStatus(game),
     startTimestamp: parseLocalDate(game.local_date, game.stadium_id),
     homeId,

@@ -36,14 +36,14 @@ export function nextKnockoutRound(round: TournamentRound): TournamentRound | nul
 
 /** Parse SportAPI round / tournament names into our stage slug. */
 export function roundFromName(name: string): TournamentRound {
-  const n = name.toLowerCase();
+  const n = name.toLowerCase().trim();
+  if (n === "r32" || n.includes("round of 32")) return "r32";
+  if (n === "r16" || n.includes("round of 16")) return "r16";
+  if (n === "qf" || n.includes("quarter")) return "qf";
+  if (n === "sf" || n.includes("semi")) return "sf";
+  if (n === "third" || n.includes("3rd") || n.includes("third")) return "third";
+  if (n === "final" || n.includes("final")) return "final";
   if (n.includes("group")) return "group";
-  if (n.includes("round of 32")) return "r32";
-  if (n.includes("round of 16")) return "r16";
-  if (n.includes("quarter")) return "qf";
-  if (n.includes("semi")) return "sf";
-  if (n.includes("3rd") || n.includes("third")) return "third";
-  if (n.includes("final")) return "final";
   return "group";
 }
 

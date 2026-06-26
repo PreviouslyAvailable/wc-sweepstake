@@ -1,3 +1,4 @@
+import { dedupeResults } from "@/lib/result-dedup";
 import { formatTipBlock, formatTipLines } from "@/lib/tooltip-format";
 
 export type Band = "A" | "B";
@@ -77,7 +78,7 @@ export function aggregateTeamScore(
 ): MatchBreakdown {
   const teamById = new Map(teams.map((t) => [t.id, t]));
   const breakdown: MatchBreakdown = { goals: 0, cleanSheet: 0, cards: 0, giantKilling: 0, total: 0 };
-  for (const result of results) {
+  for (const result of dedupeResults(results)) {
     const m = matchBreakdownForTeam(teamId, result, teamById);
     breakdown.goals += m.goals;
     breakdown.cleanSheet += m.cleanSheet;

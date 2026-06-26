@@ -1,6 +1,7 @@
 import { supaAnon } from "@/lib/supabase";
 import { aggregateTeamScore, computeStandings, formatTeamBreakdownTooltip, Participant, Assignment, Team, Result } from "@/lib/scoring";
 import { gamesPlayedForTeam, buildGamesLeftByTeam } from "@/lib/ladder-meta";
+import { fmtIssuedDate } from "@/lib/match-dates";
 import { fetchWcFixtures } from "@/lib/wc-fixtures";
 import { buildTournamentStatusByTeam, isTeamEliminated } from "@/lib/tournament-status";
 
@@ -30,9 +31,7 @@ export default async function WhoHasWho() {
   const gamesLeftByTeam = buildGamesLeftByTeam(fixtures);
   const statusByTeam = buildTournamentStatusByTeam({ teams, results, fixtures });
 
-  const issued = new Date().toLocaleDateString("en-GB", {
-    day: "2-digit", month: "short", year: "numeric",
-  }).toUpperCase();
+  const issued = fmtIssuedDate();
 
   if (!assignments.length) {
     return (
@@ -60,7 +59,6 @@ export default async function WhoHasWho() {
     .filter(({ stubs }) => stubs.length > 0);
 
   const standings = computeStandings(participants, assignments, teams, results);
-  const leaderId = standings[0]?.participant.id;
   const leaderTotal = standings[0]?.total ?? 0;
 
   return (
@@ -89,7 +87,7 @@ export default async function WhoHasWho() {
               <div className="nameplate">
                 <h2 className="nameplate-name">
                   {person.name}
-                  {person.id === leaderId && totalPts === leaderTotal && leaderTotal > 0 ? (
+                  {totalPts === leaderTotal && leaderTotal > 0 ? (
                     <span className="stamp-mark stamp-leader">Leader</span>
                   ) : null}
                 </h2>

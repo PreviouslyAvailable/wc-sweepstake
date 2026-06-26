@@ -16,6 +16,7 @@ import {
   Result,
   StandingRow,
 } from "@/lib/scoring";
+import { fmtIssuedDate } from "@/lib/match-dates";
 import { fetchWcFixtures } from "@/lib/wc-fixtures";
 import { buildTournamentStatusByTeam, isTeamEliminated } from "@/lib/tournament-status";
 
@@ -64,19 +65,18 @@ export default async function Ladder() {
   const leaderTotal = standings[0]?.total ?? 0;
 
   let fixtures: Awaited<ReturnType<typeof fetchWcFixtures>> = [];
+  let fixtureError = false;
   try {
     fixtures = await fetchWcFixtures({ results, teams });
   } catch {
-    // Fixture sheet unavailable — GP and standings still render
+    fixtureError = true;
   }
   const ownerByTeamId = buildOwnerByTeamId(assignments, participants);
   const nextByTeam = buildNextFixtureByTeam(fixtures, ownerByTeamId, teamById);
   const gamesLeftByTeam = buildGamesLeftByTeam(fixtures);
   const statusByTeam = buildTournamentStatusByTeam({ teams, results, fixtures });
 
-  const issued = new Date().toLocaleDateString("en-GB", {
-    day: "2-digit", month: "short", year: "numeric",
-  }).toUpperCase();
+  const issued = fmtIssuedDate();
 
   return (
     <div>
@@ -85,6 +85,11 @@ export default async function Ladder() {
         <p className="overline">
           STANDINGS INDEX · {standings.length} HOLDERS · AS OF {issued}
         </p>
+        {fixtureError && (
+          <p className="mono mt-2 text-xs" style={{ color: "var(--dim)", letterSpacing: "0.06em" }}>
+            Fixture sheet unavailable — games left and next opponent may be incomplete.
+          </p>
+        )}
         {/* Italic Intruder: one slanted letter in the Instrument Serif heading */}
         <h1 className="display text-5xl" style={{ marginTop: "0.2rem" }}>
           The la<span className="intruder">d</span>der
@@ -117,7 +122,7 @@ export default async function Ladder() {
                 <div className="ladder-holder-block">
                   <span className="ladder-holder-name display text-xl">
                     {row.participant.name}
-                    {i === 0 && row.total === leaderTotal && row.total > 0 && (
+                    {row.total === leaderTotal && leaderTotal > 0 && (
                       <span className="stamp-mark stamp-leader">Leader</span>
                     )}
                   </span>

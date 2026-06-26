@@ -1,15 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { NAME_TO_ID, OPPONENT_TEAMS } from "@/lib/team-names";
-import { sportApiFetch } from "@/lib/sportapi-client";
 import { fetchWcSportEvents, type SportEvent } from "@/lib/sportapi-events";
-import type {
-  SportApiIncidentsResponse,
-  SportApiResultNote,
-  SportApiStatisticsResponse,
-} from "@/lib/sportapi-types";
+import { fetchCardsForSportApiEvent } from "@/lib/sportapi-cards";
 import { ftScoresFromSportEvent } from "@/lib/sportapi-scores";
 import { roundFromName } from "@/lib/tournament-rounds";
 import { fixturePairKey } from "@/lib/fixture-pair-key";
+import {
+  noteWithPenWinner,
+  penWinnerFromSportEvent,
+  penWinnerFromWc26Scores,
+} from "@/lib/knockout-result";
+import { getLockedResultPairs } from "@/lib/steward-overrides";
 import { WC_START, dateRange } from "@/lib/tournament-dates";
 import {
   fetchWorldCup26Games,
@@ -19,6 +20,7 @@ import {
   type WorldCup26Game,
 } from "@/lib/worldcup26";
 import type { Result } from "@/lib/scoring";
+import { syncTeamProgress } from "@/lib/sync-progress";
 
 const LOOKBACK_DAYS = 7;
 
@@ -27,102 +29,6 @@ function scanFromDate(today: string): string {
   lookback.setDate(lookback.getDate() - LOOKBACK_DAYS);
   const fromLookback = lookback.toISOString().split("T")[0];
   return fromLookback < WC_START ? WC_START : fromLookback;
-}
-
-interface CardCounts { yellow_a: number; red_a: number; yellow_b: number; red_b: number }
-
-function parseCardsFromStats(statistics: SportApiStatisticsResponse["statistics"]): CardCounts | null {
-  const periods = statistics ?? [];
-  const period = periods.find((p) => p.period === "ALL") ?? periods[0];
-  if (!period) return null;
-
-  let yellow_a = 0, red_a = 0, yellow_b = 0, red_b = 0;
-  let found = false;
-
-  for (const group of period.groups ?? []) {
-    for (const item of group.statisticsItems ?? []) {
-      const name: string = (item.name ?? "").toLowerCase();
-      const h = parseInt(item.home ?? "0", 10) || 0;
-      const a = parseInt(item.away ?? "0", 10) || 0;
-      if (name === "yellow cards") {
-        yellow_a += h; yellow_b += a; found = true;
-      } else if (name === "yellow-red cards") {
-        // Yellow-red = second yellow causing a red → counts as +1 yellow per the rules
-        yellow_a += h; yellow_b += a; found = true;
-      } else if (name === "red cards") {
-        red_a += h; red_b += a; found = true;
-      }
-    }
-  }
-
-  return found ? { yellow_a, red_a, yellow_b, red_b } : null;
-}
-
-function parseCardsFromIncidents(incidents: SportApiIncidentsResponse["incidents"]): CardCounts {
-  const list = incidents ?? [];
-  // First pass: count yellowRed incidents per side so we can skip their paired `red` events
-  let yellowRedHome = 0, yellowRedAway = 0;
-  for (const inc of list) {
-    if (inc.incidentType !== "card" || inc.incidentClass !== "yellowRed") continue;
-    if (inc.teamSide === "home") yellowRedHome++;
-    else if (inc.teamSide === "away") yellowRedAway++;
-  }
-
-  let yellow_a = 0, red_a = 0, yellow_b = 0, red_b = 0;
-  let skipRedHome = yellowRedHome, skipRedAway = yellowRedAway;
-
-  for (const inc of list) {
-    if (inc.incidentType !== "card") continue;
-    const cls: string = inc.incidentClass ?? "";
-    const side: string = inc.teamSide ?? "";
-    if (side !== "home" && side !== "away") continue;
-    const isHome = side === "home";
-
-    if (cls === "yellow" || cls === "yellowRed") {
-      if (isHome) yellow_a++; else yellow_b++;
-    } else if (cls === "red") {
-      if (isHome) {
-        if (skipRedHome > 0) skipRedHome--; else red_a++;
-      } else {
-        if (skipRedAway > 0) skipRedAway--; else red_b++;
-      }
-    }
-  }
-
-  return { yellow_a, red_a, yellow_b, red_b };
-}
-
-/**
- * Fetch card counts for a SportAPI event.
- * Tries the statistics endpoint first (more reliable), falls back to incidents.
- */
-async function fetchCardsForEvent(eventId: string, apiKey: string): Promise<CardCounts | null> {
-  try {
-    const statsRes = await sportApiFetch(`api/v1/event/${eventId}/statistics`, apiKey, {
-      cache: "no-store",
-    });
-    if (statsRes.ok) {
-      const data = (await statsRes.json()) as SportApiStatisticsResponse;
-      const cards = parseCardsFromStats(data.statistics);
-      if (cards) return cards;
-    }
-  } catch {
-    // fall through
-  }
-
-  try {
-    const incRes = await sportApiFetch(`api/v1/event/${eventId}/incidents`, apiKey, {
-      cache: "no-store",
-    });
-    if (incRes.ok) {
-      const data = (await incRes.json()) as SportApiIncidentsResponse;
-      return parseCardsFromIncidents(data.incidents);
-    }
-  } catch {
-    // fall through
-  }
-
-  return null;
 }
 
 async function ensureOpponentTeam(
@@ -154,6 +60,7 @@ export interface SyncOutcome {
   message?: string;
   finishedInFeed?: number;
   onFile?: number;
+  progressUpdated?: number;
 }
 
 function isGameFinished(game: WorldCup26Game): boolean {
@@ -169,15 +76,32 @@ export async function syncResultsFromApi(
   const from = scanFromDate(today);
   const dates = dateRange(from, today);
 
-  const { data: existing } = await db.from("results").select("note");
-  const syncedIds = new Set(
-    (existing ?? [])
-      .map((r: { note: string | null }) => r.note)
-      .filter((n): n is string => typeof n === "string" && n.startsWith("sport:"))
-      .map((n) => n.slice(6))
+  const [{ data: existing }, lockedPairs] = await Promise.all([
+    db.from("results").select("id, note, team_a, team_b, score_a, score_b, stage, yellow_a, red_a, yellow_b, red_b"),
+    getLockedResultPairs(db),
+  ]);
+
+  const filed = (existing ?? []) as Array<{
+    id: string;
+    note: string | null;
+    team_a: string;
+    team_b: string;
+    score_a: number;
+    score_b: number;
+    stage: string;
+    yellow_a: number;
+    red_a: number;
+    yellow_b: number;
+    red_b: number;
+  }>;
+
+  const byNote = new Map(
+    filed.filter((r) => r.note).map((r) => [r.note as string, r])
   );
+  const byPair = new Map(filed.map((r) => [fixturePairKey(r.team_a, r.team_b), r]));
 
   let wcEvents: SportEvent[] = [];
+  let feedError = false;
   try {
     wcEvents = await fetchWcSportEvents(apiKey, {
       from,
@@ -187,18 +111,17 @@ export async function syncResultsFromApi(
       cache: "no-store",
     });
   } catch {
-    // feed unavailable — sync returns empty
+    feedError = true;
   }
 
-  const toSync = wcEvents.filter((ev) => {
-    const isFinished = ev.status?.type === "finished";
-    const isNew = !syncedIds.has(String(ev.id));
-    return isFinished && isNew;
-  });
+  const toSync = wcEvents.filter((ev) => ev.status?.type === "finished");
 
   let synced = 0;
   let skipped = 0;
   const warnings: string[] = [];
+  if (feedError) {
+    warnings.push("SportAPI feed unavailable");
+  }
 
   for (const ev of toSync) {
     const homeTeamName: string = ev.homeTeam?.name ?? "";
@@ -217,15 +140,52 @@ export async function syncResultsFromApi(
     ]);
 
     const note = `sport:${ev.id}`;
-    const { data: already } = await db.from("results").select("id").eq("note", note).maybeSingle();
-    if (already) continue;
+    const keyed = fixturePairKey(homeId, awayId);
+    if (lockedPairs.has(keyed)) {
+      skipped++;
+      continue;
+    }
+
+    const filedRow = byNote.get(note) ?? byPair.get(keyed);
 
     const { scoreA, scoreB } = ftScoresFromSportEvent(ev);
-
     const roundName: string = ev.roundInfo?.name ?? ev.tournament?.name ?? "";
     const stage = roundFromName(roundName);
+    const penWinner = penWinnerFromSportEvent(ev, homeId, awayId);
+    const noteWithPen = penWinner ? noteWithPenWinner(note, penWinner) : note;
 
-    const cards = await fetchCardsForEvent(String(ev.id), apiKey);
+    if (filedRow) {
+      const homeIsA = filedRow.team_a === homeId;
+      const wantA = homeIsA ? scoreA : scoreB;
+      const wantB = homeIsA ? scoreB : scoreA;
+      const patch: Record<string, string | number> = {};
+      if (filedRow.score_a !== wantA) patch.score_a = wantA;
+      if (filedRow.score_b !== wantB) patch.score_b = wantB;
+      if (!filedRow.note) patch.note = noteWithPen;
+      else if (penWinner && !filedRow.note.includes("|pen:")) patch.note = noteWithPenWinner(filedRow.note, penWinner);
+      if (filedRow.stage !== stage) patch.stage = stage;
+
+      const cards = await fetchCardsForSportApiEvent(String(ev.id), apiKey);
+      if (cards) {
+        const ya = homeIsA ? cards.yellow_a : cards.yellow_b;
+        const ra = homeIsA ? cards.red_a : cards.red_b;
+        const yb = homeIsA ? cards.yellow_b : cards.yellow_a;
+        const rb = homeIsA ? cards.red_b : cards.red_a;
+        if (filedRow.yellow_a !== ya) patch.yellow_a = ya;
+        if (filedRow.red_a !== ra) patch.red_a = ra;
+        if (filedRow.yellow_b !== yb) patch.yellow_b = yb;
+        if (filedRow.red_b !== rb) patch.red_b = rb;
+      }
+
+      if (Object.keys(patch).length) {
+        const { error } = await db.from("results").update(patch).eq("id", filedRow.id);
+        if (error) warnings.push(`Update failed for event ${ev.id}: ${error.message}`);
+        else synced++;
+      }
+      continue;
+    }
+
+    const cards = await fetchCardsForSportApiEvent(String(ev.id), apiKey);
     if (!cards) {
       warnings.push(`Cards unavailable for event ${ev.id} — saved with 0 cards`);
     }
@@ -239,65 +199,34 @@ export async function syncResultsFromApi(
       yellow_a, red_a,
       yellow_b, red_b,
       stage,
-      note,
+      note: noteWithPen,
     });
 
     if (error) {
       warnings.push(`DB insert failed for event ${ev.id}: ${error.message}`);
     } else {
       synced++;
+      const row = {
+        id: note,
+        note: noteWithPen,
+        team_a: homeId,
+        team_b: awayId,
+        score_a: scoreA,
+        score_b: scoreB,
+        stage,
+        yellow_a,
+        red_a,
+        yellow_b,
+        red_b,
+      };
+      byNote.set(note, row);
+      byPair.set(keyed, row);
     }
   }
 
   await db.from("settings").upsert({ key: "sportapi_last_date", value: today });
 
   return { synced, checked: dates.length, skipped, warnings };
-}
-
-export interface CardResyncOutcome {
-  updated: number;
-  skipped: number;
-  warnings: string[];
-}
-
-export async function resyncCardsFromApi(
-  db: SupabaseClient,
-  apiKey: string
-): Promise<CardResyncOutcome> {
-  const { data: results } = await db
-    .from("results")
-    .select("id, note")
-    .like("note", "sport:%");
-
-  if (!results?.length) return { updated: 0, skipped: 0, warnings: [] };
-
-  let updated = 0, skipped = 0;
-  const warnings: string[] = [];
-
-  for (const result of results as SportApiResultNote[]) {
-    const eventId: string = result.note.slice(6);
-    const cards = await fetchCardsForEvent(eventId, apiKey);
-
-    if (!cards) {
-      warnings.push(`Cards unavailable for event ${eventId}`);
-      skipped++;
-      continue;
-    }
-
-    const { error } = await db
-      .from("results")
-      .update(cards)
-      .eq("id", result.id);
-
-    if (error) {
-      warnings.push(`Update failed for event ${eventId}: ${error.message}`);
-      skipped++;
-    } else {
-      updated++;
-    }
-  }
-
-  return { updated, skipped, warnings };
 }
 
 function teamIdsFromGame(
@@ -320,9 +249,10 @@ export async function syncResultsFromWorldCup26(
     return { synced: 0, checked: 0, skipped: 0, warnings: [], message: "World Cup feed unavailable" };
   }
 
-  const [{ data: teamRows }, { data: existing }] = await Promise.all([
+  const [{ data: teamRows }, { data: existing }, lockedPairs] = await Promise.all([
     db.from("teams").select("id, world_rank"),
     db.from("results").select("id, note, team_a, team_b, score_a, score_b, stage"),
+    getLockedResultPairs(db),
   ]);
 
   const worldRanks = new Map(
@@ -380,14 +310,29 @@ export async function syncResultsFromWorldCup26(
     const keyed = fixturePairKey(homeId, awayId);
     const filedRow = byNote.get(note) ?? byPair.get(keyed);
 
+    const penWinner = penWinnerFromWc26Scores(
+      homeId,
+      awayId,
+      scoreA,
+      scoreB,
+      stage,
+      game.time_elapsed ?? ""
+    );
+    const noteWithPen = penWinner ? noteWithPenWinner(note, penWinner) : note;
+
     if (filedRow) {
+      if (lockedPairs.has(keyed)) continue;
+
       const homeIsA = filedRow.team_a === homeId;
       const wantA = homeIsA ? scoreA : scoreB;
       const wantB = homeIsA ? scoreB : scoreA;
       const patch: Record<string, string | number> = {};
       if (filedRow.score_a !== wantA) patch.score_a = wantA;
       if (filedRow.score_b !== wantB) patch.score_b = wantB;
-      if (!filedRow.note) patch.note = note;
+      if (!filedRow.note) patch.note = noteWithPen;
+      else if (penWinner && !filedRow.note.includes("|pen:")) {
+        patch.note = noteWithPenWinner(filedRow.note, penWinner);
+      }
       if (filedRow.stage !== stage) patch.stage = stage;
       if (Object.keys(patch).length) {
         const { error } = await db.from("results").update(patch).eq("id", filedRow.id);
@@ -412,7 +357,7 @@ export async function syncResultsFromWorldCup26(
       yellow_b: 0,
       red_b: 0,
       stage,
-      note,
+      note: noteWithPen,
     }).select("id, note, team_a, team_b, score_a, score_b, stage").single();
 
     if (error) {
@@ -443,21 +388,40 @@ export async function syncResultsFromWorldCup26(
 }
 
 export async function syncResultsFromFeed(db: SupabaseClient): Promise<SyncOutcome> {
+  let outcome: SyncOutcome;
+
   if (isWorldCup26Enabled()) {
-    return syncResultsFromWorldCup26(db);
+    outcome = await syncResultsFromWorldCup26(db);
+  } else {
+    const apiKey = process.env.RAPIDAPI_KEY;
+    if (apiKey && process.env.SPORTAPI_ENABLED === "true") {
+      const wcKeyword = (process.env.SPORTAPI_TOURNAMENT_KEYWORD ?? "World Cup").toLowerCase();
+      outcome = await syncResultsFromApi(db, apiKey, wcKeyword);
+    } else {
+      outcome = {
+        synced: 0,
+        checked: 0,
+        skipped: 0,
+        warnings: [],
+        message: "Live feed sync is off — file results manually on the desk.",
+      };
+    }
   }
 
-  const apiKey = process.env.RAPIDAPI_KEY;
-  if (apiKey && process.env.SPORTAPI_ENABLED === "true") {
-    const wcKeyword = (process.env.SPORTAPI_TOURNAMENT_KEYWORD ?? "World Cup").toLowerCase();
-    return syncResultsFromApi(db, apiKey, wcKeyword);
+  try {
+    const progress = await syncTeamProgress(db);
+    outcome = {
+      ...outcome,
+      progressUpdated: progress.updated,
+      warnings: [...outcome.warnings, ...progress.warnings],
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Progress sync failed";
+    outcome = {
+      ...outcome,
+      warnings: [...outcome.warnings, msg],
+    };
   }
 
-  return {
-    synced: 0,
-    checked: 0,
-    skipped: 0,
-    warnings: [],
-    message: "Live feed sync is off — file results manually on the desk.",
-  };
+  return outcome;
 }
