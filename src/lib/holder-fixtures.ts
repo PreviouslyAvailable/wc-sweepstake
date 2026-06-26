@@ -1,4 +1,5 @@
 import type { Assignment, Participant, Team } from "@/lib/scoring";
+import { isGroupRoundName } from "@/lib/tournament-rounds";
 import type { WcFixture } from "@/lib/wc-fixtures";
 import { buildOwnerByTeamId } from "@/lib/ladder-meta";
 
@@ -11,6 +12,7 @@ export interface HolderFixtureRow {
   fixtureId: number;
   startTimestamp: number;
   isLive: boolean;
+  isKnockout: boolean;
   home: FixtureSide;
   away: FixtureSide;
 }
@@ -46,6 +48,7 @@ export function buildUpcomingHolderFixtures(
       fixtureId: f.id,
       startTimestamp: f.startTimestamp,
       isLive: f.status === "inprogress",
+      isKnockout: !isGroupRoundName(f.roundName),
       home: {
         team: homeTeam,
         holder: assigned.has(f.homeId) ? ownerByTeamId.get(f.homeId) ?? null : null,

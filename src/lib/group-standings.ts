@@ -447,6 +447,10 @@ export function analyzeGroupFate(
     return { kind: "third_bubble", position: position >= 3 ? position : 3, maxPosition: 3 };
   }
   if (worstRank > 8 && bestRank > 8) {
+    const remaining = GROUP_MATCHES - myStats.played;
+    if (remaining > 0 && position >= 3) {
+      return { kind: "third_bubble", position: position >= 3 ? position : 3, maxPosition: 3 };
+    }
     return { kind: "eliminated", position, maxPosition: 4 };
   }
   if (bestRank <= 8 && worstRank <= 8) {

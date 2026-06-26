@@ -68,19 +68,16 @@ export default async function ProgrammeCover() {
 
   let upcomingFixtures: ReturnType<typeof buildUpcomingHolderFixtures> = [];
   if (drawn) {
-    const apiKey = process.env.RAPIDAPI_KEY;
-    if (apiKey) {
-      try {
-        const fixtures = await fetchWcFixtures(apiKey);
-        upcomingFixtures = buildUpcomingHolderFixtures(
-          fixtures,
-          assignments,
-          participants,
-          teams
-        );
-      } catch {
-        // Fixture sheet unavailable — programme still renders
-      }
+    try {
+      const fixtures = await fetchWcFixtures({ results, teams });
+      upcomingFixtures = buildUpcomingHolderFixtures(
+        fixtures,
+        assignments,
+        participants,
+        teams
+      );
+    } catch {
+      // Fixture sheet unavailable — programme still renders
     }
   }
 

@@ -8,6 +8,8 @@ import type {
 import { fmtFixtureNzstDate, fmtFixtureNzstDateTime, fmtFixtureNzstTime } from "@/lib/match-dates";
 import { formatTipLines } from "@/lib/tooltip-format";
 import type { WcFixture } from "@/lib/wc-fixtures";
+import type { TeamTournamentStatus } from "@/lib/tournament-status";
+import { isTeamEliminated } from "@/lib/tournament-status";
 import { isGroupRoundName } from "@/lib/tournament-rounds";
 
 export interface TeamNextFixture {
@@ -123,7 +125,8 @@ export function ladderRowMeta(
   row: StandingRow,
   results: Result[],
   nextByTeam: Map<string, TeamNextFixture>,
-  gamesLeftByTeam: Map<string, number>
+  gamesLeftByTeam: Map<string, number>,
+  statusByTeam?: Map<string, TeamTournamentStatus>
 ): LadderRowMeta {
   let gamesPlayed = 0;
   let gamesLeft = 0;
@@ -132,15 +135,19 @@ export function ladderRowMeta(
   for (const { team } of row.teams) {
     const played = gamesPlayedForTeam(team.id, results);
     const left = gamesLeftByTeam.get(team.id) ?? 0;
+    const eliminated = isTeamEliminated(team, statusByTeam?.get(team.id));
     gamesPlayed += played;
-    if (!team.is_out) gamesLeft += left;
-    const matchLine = team.is_out
-      ? `${team.flag} ${team.name}: ${played}p · done`
-      : `${team.flag} ${team.name}: ${played}p · ${left} left`;
+    if (!eliminated) gamesLeft += left;
+    const matchLine = eliminated
+      ? `${team.flag} ${team.name}: ${played} played · out`
+      : `${team.flag} ${team.name}: ${played} played · ${left} left`;
     gameParts.push(matchLine);
   }
 
-  const alive = row.teams.filter(({ team }) => !team.is_out);
+  const alive = row.teams.filter(({ team }) => {
+    const eliminated = isTeamEliminated(team, statusByTeam?.get(team.id));
+    return !eliminated;
+  });
   const upcoming = alive
     .map(({ team }) => {
       const fixture = nextByTeam.get(team.id);
@@ -183,18 +190,27 @@ export function ladderRowMeta(
       : `${fixture.teamFlag} vs ${fixture.opponentLabel}`
   );
 
-  const dateLabels = upcoming.map(({ fixture }) => fmtFixtureNzstDateTime(fixture.startTimestamp));
+  const fixtureLines = upcoming.map(({ fixture }) => {
+    const opponent = fixture.isLive
+      ? `${fixture.teamFlag} vs ${fixture.opponentLabel} · LIVE`
+      : `${fixture.teamFlag} vs ${fixture.opponentLabel}`;
+    const when = fixture.isLive
+      ? ""
+      : ` · ${fmtFixtureNzstDateTime(fixture.startTimestamp)}`;
+    return `${opponent}${when}`;
+  });
+
   const primary = upcoming[0].fixture;
 
   return {
     gamesPlayed,
     gamesLeft,
-    gamesTooltip: gameParts.join(" · ") || "No matches filed",
+    gamesTooltip: gameParts.length ? formatTipLines(...gameParts) : formatTipLines("No matches filed"),
     nextLabel: labels[0],
-    nextTitle: formatTipLines(...labels),
+    nextTitle: formatTipLines(...fixtureLines),
     nextTime: primary.isLive ? "LIVE" : fmtFixtureNzstTime(primary.startTimestamp),
-    nextTimeTitle: dateLabels.length ? formatTipLines(...dateLabels) : "",
+    nextTimeTitle: "",
     nextDate: fmtFixtureNzstDate(primary.startTimestamp),
-    nextDateTitle: dateLabels.length ? formatTipLines(...dateLabels) : "",
+    nextDateTitle: "",
   };
 }

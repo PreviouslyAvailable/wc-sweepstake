@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/auth";
 import { supaAdmin } from "@/lib/supabase";
-import { isAdmin } from "@/lib/auth";
 import { ROUND_ORDER, type TournamentRound } from "@/lib/tournament-rounds";
 
 const VALID_ROUNDS = new Set<string>(ROUND_ORDER);
 
 export async function POST(req: NextRequest) {
-  if (!(await isAdmin())) return NextResponse.json({ error: "Not authorised" }, { status: 401 });
+  const denied = await requireAdmin();
+  if (denied) return denied;
   const { team_id, is_out, furthest_round } = await req.json();
   if (!team_id) return NextResponse.json({ error: "team_id required" }, { status: 400 });
 

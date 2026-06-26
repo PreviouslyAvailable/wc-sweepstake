@@ -51,6 +51,7 @@ const POOL_NAMES: Record<string, string> = {
   "Panama": "PAN",
   "Sweden": "SWE",
   "Czechia": "CZE", "Czech Republic": "CZE",
+  "Democratic Republic of the Congo": "COD",
   "Paraguay": "PAR",
   "Scotland": "SCO",
   "Tunisia": "TUN",

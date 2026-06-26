@@ -67,6 +67,9 @@ export default function FixtureSheet({ fixtures, holders }: FixtureSheetProps) {
                 {String(i + 1).padStart(2, "0")}
               </span>
               <span className="fixture-sheet-when mono tabular-nums">
+                {row.isKnockout && (
+                  <span className="fixture-sheet-round">Knockout</span>
+                )}
                 {row.isLive
                   ? "LIVE"
                   : `${fmtFixtureNzstDate(row.startTimestamp)} · ${fmtFixtureNzstTime(row.startTimestamp)}`}

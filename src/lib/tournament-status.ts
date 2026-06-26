@@ -20,6 +20,13 @@ import {
 
 export type TournamentFate = "in" | "out" | "bubble";
 
+export function isTeamEliminated(
+  team: Team,
+  status: TeamTournamentStatus | undefined
+): boolean {
+  return team.is_out || status?.fate === "out";
+}
+
 export interface TeamTournamentStatus {
   playing: TournamentRound;
   secured: TournamentRound | null;
@@ -53,30 +60,38 @@ function openFixturesForTeam(teamId: string, fixtures: WcFixture[]): WcFixture[]
 
 function fixtureSecuredRound(
   teamId: string,
-  fixtures: WcFixture[]
+  fixtures: WcFixture[],
+  results: Result[]
 ): TournamentRound | null {
   const open = openFixturesForTeam(teamId, fixtures);
-  const hasGroup = open.some((f) => isGroupRoundName(f.roundName));
+  const hasOpenGroup = open.some((f) => isGroupRoundName(f.roundName));
+  // Knockout placeholders on the fixture sheet must not clinch R32 while group games remain.
+  if (hasOpenGroup || groupMatchesRemaining(teamId, results) > 0) return null;
+
   const knockoutRounds = open
     .filter((f) => !isGroupRoundName(f.roundName))
     .map((f) => roundFromName(f.roundName))
     .filter((r) => r !== "group");
 
-  if (hasGroup && knockoutRounds.length > 0) {
-    return knockoutRounds.sort(
-      (a, b) =>
-        ["group", "r32", "r16", "qf", "sf", "third", "final"].indexOf(a) -
-        ["group", "r32", "r16", "qf", "sf", "third", "final"].indexOf(b)
-    )[0];
-  }
-  return null;
+  if (!knockoutRounds.length) return null;
+  return knockoutRounds.sort(
+    (a, b) =>
+      ["group", "r32", "r16", "qf", "sf", "third", "final"].indexOf(a) -
+      ["group", "r32", "r16", "qf", "sf", "third", "final"].indexOf(b)
+  )[0];
 }
 
 function playingRoundFromFixtures(
   teamId: string,
-  fixtures: WcFixture[]
+  fixtures: WcFixture[],
+  results: Result[]
 ): TournamentRound | null {
-  const next = openFixturesForTeam(teamId, fixtures)[0];
+  const open = openFixturesForTeam(teamId, fixtures);
+  if (groupMatchesRemaining(teamId, results) > 0) {
+    const nextGroup = open.find((f) => isGroupRoundName(f.roundName));
+    if (nextGroup) return "group";
+  }
+  const next = open[0];
   if (!next) return null;
   return roundFromName(next.roundName);
 }
@@ -256,7 +271,32 @@ export function computeTeamTournamentStatus(
   if (groupFate?.kind === "third_bubble") fate = "bubble";
   if (groupFate?.kind === "eliminated") fate = "out";
 
-  const fixtureSecured = fixtureSecuredRound(team.id, fixtures);
+  const groupRemaining = groupMatchesRemaining(team.id, results);
+  const tablePosition = letter
+    ? sortGroupTable(teamsInGroup(letter), results, worldRanks).indexOf(team.id) + 1
+    : null;
+
+  // Standings math can call a team out before the group stage ends — keep them
+  // in play while group fixtures remain unless they're locked in 4th.
+  if (fate === "out" && groupRemaining > 0) {
+    if (tablePosition === 3 || groupFate?.kind === "third_bubble") {
+      fate = "bubble";
+    } else if (tablePosition !== null && tablePosition <= 2) {
+      fate = "in";
+    }
+  }
+
+  if (
+    fate === "in" &&
+    groupRemaining > 0 &&
+    tablePosition === 3 &&
+    groupFate?.kind !== "clinched_top2" &&
+    groupFate?.kind !== "clinched_third"
+  ) {
+    fate = "bubble";
+  }
+
+  const fixtureSecured = fixtureSecuredRound(team.id, fixtures, results);
   const standingsSecured = standingsSecuredRound(team.id, results, worldRanks);
   const adminSecured = parseFurthestRound(team.furthest_round);
   const adminRound = adminSecured !== "group" ? adminSecured : null;
@@ -272,10 +312,14 @@ export function computeTeamTournamentStatus(
   }
 
   let playing =
-    playingRoundFromFixtures(team.id, fixtures) ??
+    playingRoundFromFixtures(team.id, fixtures, results) ??
     advanced ??
     secured ??
     highestPlayedRound(team.id, results);
+
+  if (groupRemaining > 0 && playing !== "group") {
+    playing = "group";
+  }
 
   if (playing === "group" && secured && secured !== "group") {
     playing = "group";
@@ -286,9 +330,7 @@ export function computeTeamTournamentStatus(
     playing = "group";
   }
 
-  const position = letter
-    ? sortGroupTable(teamsInGroup(letter), results, worldRanks).indexOf(team.id) + 1
-    : null;
+  const position = tablePosition;
 
   const { label, detail, chip } = buildLabelAndDetail(
     playing,

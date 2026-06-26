@@ -1,15 +1,7 @@
-const TZ = "Europe/London";
 const NZ_TZ = "Pacific/Auckland";
 
 export function fmtFixtureDate(ts: number): string {
-  if (!ts) return "—";
-  return new Date(ts * 1000)
-    .toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "short",
-      timeZone: TZ,
-    })
-    .toUpperCase();
+  return fmtFixtureNzstDate(ts);
 }
 
 export function fmtFixtureNzstDate(ts: number): string {
@@ -24,12 +16,7 @@ export function fmtFixtureNzstDate(ts: number): string {
 }
 
 export function fmtFixtureKickoff(ts: number): string {
-  if (!ts) return "";
-  return new Date(ts * 1000).toLocaleTimeString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: TZ,
-  });
+  return fmtFixtureNzstTime(ts);
 }
 
 export function fmtFixtureNzstTime(ts: number): string {
@@ -43,14 +30,7 @@ export function fmtFixtureNzstTime(ts: number): string {
 }
 
 export function fmtFixtureDateTime(ts: number): string {
-  if (!ts) return "";
-  const date = new Date(ts * 1000).toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    timeZone: TZ,
-  });
-  return `${date.toUpperCase()} · ${fmtFixtureKickoff(ts)}`;
+  return fmtFixtureNzstDateTime(ts);
 }
 
 export function fmtFixtureNzstDateTime(ts: number): string {

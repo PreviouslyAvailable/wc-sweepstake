@@ -8,7 +8,8 @@ import {
 import {
   computeStandings,
   computeUnclaimedTeamScores,
-  formatBreakdownTooltip,
+  formatTeamBreakdownTooltip,
+  formatPtsBreakdownLines,
   Participant,
   Assignment,
   Team,
@@ -16,35 +17,19 @@ import {
   StandingRow,
 } from "@/lib/scoring";
 import { fetchWcFixtures } from "@/lib/wc-fixtures";
-import { buildTournamentStatusByTeam } from "@/lib/tournament-status";
+import { buildTournamentStatusByTeam, isTeamEliminated } from "@/lib/tournament-status";
 
 import { formatTipSections } from "@/lib/tooltip-format";
 
 export const dynamic = "force-dynamic";
 
 function holderPtsTooltip(row: StandingRow): string {
-  const breakdown = {
-    goals: row.teams.reduce((s, t) => s + t.breakdown.goals, 0),
-    cleanSheet: row.teams.reduce((s, t) => s + t.breakdown.cleanSheet, 0),
-    cards: row.teams.reduce((s, t) => s + t.breakdown.cards, 0),
-    giantKilling: row.teams.reduce((s, t) => s + t.breakdown.giantKilling, 0),
-    total: row.total,
-  };
-  return formatTipSections([
-    {
-      heading: `${row.participant.name} — ${row.total} pts`,
-      lines: [
-        ...row.teams.map(
-          ({ team, total }) =>
-            `${team.flag} ${team.name} +${total}${team.is_out ? " (out)" : ""}`
-        ),
-        `Goals: ${breakdown.goals}`,
-        `Clean sheets: ${breakdown.cleanSheet}`,
-        `Cards: ${breakdown.cards}`,
-        breakdown.giantKilling ? `Giant-killing: ${breakdown.giantKilling}` : null,
-      ],
-    },
-  ]);
+  return formatTipSections(
+    row.teams.map(({ team, breakdown }) => ({
+      heading: `${team.flag} ${team.name}${team.is_out ? " · out" : ""}`,
+      lines: formatPtsBreakdownLines(breakdown),
+    }))
+  );
 }
 
 export default async function Ladder() {
@@ -78,14 +63,11 @@ export default async function Ladder() {
   const unclaimed = computeUnclaimedTeamScores(assignments, teams, results);
   const leaderTotal = standings[0]?.total ?? 0;
 
-  const apiKey = process.env.RAPIDAPI_KEY;
   let fixtures: Awaited<ReturnType<typeof fetchWcFixtures>> = [];
-  if (apiKey) {
-    try {
-      fixtures = await fetchWcFixtures(apiKey);
-    } catch {
-      // Fixture sheet unavailable — GP and standings still render
-    }
+  try {
+    fixtures = await fetchWcFixtures({ results, teams });
+  } catch {
+    // Fixture sheet unavailable — GP and standings still render
   }
   const ownerByTeamId = buildOwnerByTeamId(assignments, participants);
   const nextByTeam = buildNextFixtureByTeam(fixtures, ownerByTeamId, teamById);
@@ -125,7 +107,10 @@ export default async function Ladder() {
         </div>
         <ol>
           {standings.map((row, i) => {
-            const meta = ladderRowMeta(row, results, nextByTeam, gamesLeftByTeam);
+            const meta = ladderRowMeta(row, results, nextByTeam, gamesLeftByTeam, statusByTeam);
+            const aliveCount = row.teams.filter(({ team }) =>
+              !isTeamEliminated(team, statusByTeam.get(team.id))
+            ).length;
             return (
               <li key={row.participant.id} className="ladder-row">
                 <span className="index-num">{String(i + 1).padStart(2, "0")}</span>
@@ -133,36 +118,28 @@ export default async function Ladder() {
                   <span className="ladder-holder-name display text-xl">
                     {row.participant.name}
                     {i === 0 && row.total === leaderTotal && row.total > 0 && (
-                      <span className="stamp-mark" style={{ color: "var(--yellow)" }}>
-                        Leader
-                      </span>
+                      <span className="stamp-mark stamp-leader">Leader</span>
                     )}
                   </span>
                   <span className="ladder-drawcards text-sm">
                     {row.teams.map(({ team, breakdown, total }) => {
                       const status = statusByTeam.get(team.id);
-                      const tip = formatBreakdownTooltip(
-                        breakdown,
-                        [
-                          `${team.name} [${team.world_rank}] — ${total} pts`,
-                          status ? `${status.label} · ${status.detail}` : null,
-                          team.is_out ? "(eliminated)" : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")
-                      );
+                      const eliminated = isTeamEliminated(team, status);
+                      const tip = formatTeamBreakdownTooltip(team, breakdown);
                       return (
                       <span
                         key={team.id}
-                        className="has-tip ladder-team-chip"
+                        className={`has-tip ladder-team-chip${eliminated ? " is-out" : ""}`}
                         data-tip={tip}
                         tabIndex={0}
-                        style={{ opacity: team.is_out ? 0.35 : 1 }}
                       >
                         <span aria-hidden>{team.flag}</span>
-                        {status && !team.is_out ? (
+                        {eliminated ? (
+                          <span className="ladder-team-out-name">Out</span>
+                        ) : null}
+                        {status && !eliminated ? (
                           <span
-                            className={`mono round-chip-sm${status.secured ? " round-chip-secured" : ""}${status.fate === "bubble" ? " round-chip-bubble" : ""}`}
+                            className={`mono round-chip-sm${status.secured ? " round-chip-secured" : ""}${status.playing !== "group" ? " round-chip-playing" : ""}${status.fate === "bubble" ? " round-chip-bubble" : ""}`}
                           >
                             {status.chip}
                           </span>
@@ -173,7 +150,11 @@ export default async function Ladder() {
                   </span>
                 </div>
                 <div className="ladder-fixture">
-                  <span className="ladder-next has-tip" data-tip={meta.nextTitle} tabIndex={0}>
+                  <span
+                    className={`ladder-next has-tip${meta.nextLabel === "Out" ? " is-out" : ""}`}
+                    data-tip={meta.nextTitle}
+                    tabIndex={0}
+                  >
                     {meta.nextLabel}
                   </span>
                   {meta.nextDateTitle ? (
@@ -203,7 +184,7 @@ export default async function Ladder() {
                   {meta.gamesPlayed}
                 </span>
                 <span className="ladder-num text-sm" style={{ color: "var(--dim)" }}>
-                  {row.alive}
+                  {aliveCount}
                 </span>
                 <span
                   className="ladder-num text-2xl has-tip"
@@ -228,12 +209,9 @@ export default async function Ladder() {
           <p className="mono mb-4 text-xs" style={{ color: "var(--dim)", letterSpacing: "0.06em" }}>
             Opponents and held-out draw teams · scored under the schedule but not on any holder card
           </p>
-          <ul>
+          <ul className="unclaimed-list">
             {unclaimed.map(({ team, breakdown, total }) => {
-              const tip = formatBreakdownTooltip(
-                breakdown,
-                `${team.name} [${team.world_rank}] — ${total} pts`
-              );
+              const tip = formatTeamBreakdownTooltip(team, breakdown);
               return (
               <li
                 key={team.id}
@@ -247,7 +225,7 @@ export default async function Ladder() {
                 <span className="mono text-xs" style={{ color: "var(--dim)" }}>
                   [{team.world_rank}]
                 </span>
-                <span className="mono ml-auto text-xl" style={{ color: "var(--cream)" }}>
+                <span className="mono text-xl tabular-nums" style={{ color: "var(--cream)", textAlign: "right" }}>
                   {total}
                 </span>
               </li>

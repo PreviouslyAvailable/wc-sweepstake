@@ -1,3 +1,5 @@
+import { formatTipBlock, formatTipLines } from "@/lib/tooltip-format";
+
 export type Band = "A" | "B";
 
 export interface Team {
@@ -48,6 +50,12 @@ export interface MatchBreakdown {
   total: number;
 }
 
+/** Per-match breakdown with card counts — used on the live board. */
+export interface LiveMatchBreakdown extends MatchBreakdown {
+  yellows: number;
+  reds: number;
+}
+
 export interface TeamScore {
   team: Team;
   breakdown: MatchBreakdown;
@@ -80,19 +88,84 @@ export function aggregateTeamScore(
   return breakdown;
 }
 
-import { formatTipLines, formatTipSections } from "@/lib/tooltip-format";
-
-export function formatBreakdownTooltip(breakdown: MatchBreakdown, label?: string | null): string {
-  const lines = [
-    `Goals: ${breakdown.goals}`,
-    `Clean sheets: ${breakdown.cleanSheet}`,
-    `Cards: ${breakdown.cards}`,
-    breakdown.giantKilling ? `Giant-killing: ${breakdown.giantKilling}` : null,
-  ];
-  if (label) {
-    return formatTipSections([{ heading: label, lines }]);
+/** Scoring lines for tooltips — omits zero categories, ends with total. */
+export function formatPtsBreakdownLines(
+  breakdown: MatchBreakdown,
+  extras?: { yellows?: number; reds?: number; signed?: boolean }
+): string[] {
+  const fmt = (n: number) => (extras?.signed && n > 0 ? `+${n}` : `${n}`);
+  const lines: string[] = [`Goals: ${fmt(breakdown.goals)}`];
+  if (breakdown.cleanSheet) {
+    lines.push(
+      extras?.signed
+        ? `Clean sheet: ${fmt(breakdown.cleanSheet)}`
+        : `Clean sheets: ${breakdown.cleanSheet}`
+    );
   }
-  return formatTipLines(...lines);
+  if (extras?.yellows || extras?.reds) {
+    const parts: string[] = [];
+    if (extras.yellows) parts.push(`${extras.yellows}Y`);
+    if (extras.reds) parts.push(`${extras.reds}R`);
+    const cardPts = extras.signed ? `(+${breakdown.cards})` : `(${breakdown.cards} pts)`;
+    lines.push(`Cards: ${parts.join(" ")} ${cardPts}`);
+  } else if (breakdown.cards) {
+    lines.push(`Cards: ${breakdown.cards}`);
+  }
+  if (breakdown.giantKilling) {
+    lines.push(
+      extras?.signed
+        ? `Giant-kill: ${fmt(breakdown.giantKilling)}`
+        : `Giant-killing: ${breakdown.giantKilling}`
+    );
+  }
+  if (!extras?.signed) lines.push(`Total: ${breakdown.total}`);
+  return lines;
+}
+
+export function formatTeamBreakdownTooltip(
+  team: Pick<Team, "name" | "flag">,
+  breakdown: MatchBreakdown
+): string {
+  return formatBreakdownTooltip(breakdown, `${team.flag} ${team.name}`);
+}
+
+export function formatBreakdownTooltip(
+  breakdown: MatchBreakdown,
+  context?: string | (string | null | undefined)[] | null
+): string {
+  const lines = formatPtsBreakdownLines(breakdown);
+  if (!context) return formatTipLines(...lines);
+  const pre = Array.isArray(context) ? context : [context];
+  return formatTipBlock({ pre, lines });
+}
+
+/** Points for one side from raw scores — used when results are not yet filed. */
+export function matchBreakdownFromScores(
+  myScore: number,
+  theirScore: number,
+  myRank: number,
+  theirRank: number,
+  cardCounts: { yellows?: number; reds?: number } = {}
+): LiveMatchBreakdown {
+  const myYellows = cardCounts.yellows ?? 0;
+  const myReds = cardCounts.reds ?? 0;
+  const goals = myScore;
+  const cleanSheet = theirScore === 0 ? 3 : 0;
+  const cards = myYellows * 1 + myReds * 3;
+  let giantKilling = 0;
+  if (myScore > theirScore) {
+    const gap = myRank - theirRank;
+    if (gap > 0) giantKilling = Math.floor(gap / 10);
+  }
+  return {
+    goals,
+    cleanSheet,
+    yellows: myYellows,
+    reds: myReds,
+    cards,
+    giantKilling,
+    total: goals + cleanSheet + cards + giantKilling,
+  };
 }
 
 export function matchBreakdownForTeam(
@@ -131,6 +204,20 @@ export function matchBreakdownForTeam(
 
   const total = goals + cleanSheet + cards + giantKilling;
   return { goals, cleanSheet, cards, giantKilling, total };
+}
+
+export function liveBreakdownForTeam(
+  teamId: string,
+  result: Result,
+  teamById: Map<string, Team>
+): LiveMatchBreakdown {
+  const m = matchBreakdownForTeam(teamId, result, teamById);
+  const isA = result.team_a === teamId;
+  return {
+    ...m,
+    yellows: isA ? (result.yellow_a ?? 0) : (result.yellow_b ?? 0),
+    reds: isA ? (result.red_a ?? 0) : (result.red_b ?? 0),
+  };
 }
 
 export function computeStandings(

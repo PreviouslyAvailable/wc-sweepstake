@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
+import { roundIndex, type TournamentRound } from "@/lib/tournament-rounds";
 
 interface T {
   id: string;
@@ -43,6 +44,14 @@ const ROUND_OPTIONS = [
   { value: "final", label: "Final" },
 ];
 
+function stageOrder(stage: string): number {
+  return roundIndex(
+    ROUND_OPTIONS.some((o) => o.value === stage)
+      ? (stage as TournamentRound)
+      : "group"
+  );
+}
+
 export default function ResultsDesk() {
   const [admin, setAdmin] = useState(false);
   const [passcode, setPasscode] = useState("");
@@ -50,6 +59,7 @@ export default function ResultsDesk() {
   const [results, setResults] = useState<R[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [syncWarnings, setSyncWarnings] = useState<string[]>([]);
   const [syncing, setSyncing] = useState(false);
   const syncingRef = useRef(false);
   const [cardSyncMsg, setCardSyncMsg] = useState<string | null>(null);
@@ -59,7 +69,7 @@ export default function ResultsDesk() {
     const db = supa();
     const [t, r, auth] = await Promise.all([
       db.from("teams").select("*").order("band").order("world_rank"),
-      db.from("results").select("*").order("created_at", { ascending: false }),
+      db.from("results").select("*").order("created_at", { ascending: true }),
       fetch("/api/login").then((res) => res.json()),
     ]);
     setTeams((t.data ?? []) as T[]);
@@ -67,35 +77,66 @@ export default function ResultsDesk() {
     setAdmin(Boolean(auth.admin));
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  const sortedResults = useMemo(
+    () =>
+      [...results].sort(
+        (a, b) =>
+          stageOrder(a.stage) - stageOrder(b.stage) ||
+          a.created_at.localeCompare(b.created_at)
+      ),
+    [results]
+  );
 
   const runSync = useCallback(async () => {
-    if (!admin || syncingRef.current) return;
+    if (syncingRef.current) return;
     syncingRef.current = true;
     setSyncing(true);
-    setSyncMsg("Checking for new results…");
+    setSyncMsg("Pulling results from the World Cup feed…");
+    setSyncWarnings([]);
     try {
       const r = await fetch("/api/sync");
       const data = await r.json();
+      if (r.status === 401) {
+        setAdmin(false);
+        setSyncMsg("Session expired — enter the steward passcode again.");
+        return;
+      }
       if (data.error) {
         setSyncMsg(`Sync error: ${data.error}`);
+      } else if (typeof data.onFile === "number" && typeof data.finishedInFeed === "number") {
+        const gap = data.finishedInFeed - data.onFile;
+        if (gap > 0) {
+          setSyncMsg(
+            `${data.onFile} of ${data.finishedInFeed} finished matches on file${data.synced ? ` · ${data.synced} just added` : ""}`
+          );
+        } else if (data.synced > 0) {
+          setSyncMsg(`Synced ${data.synced} result${data.synced === 1 ? "" : "s"} · ${data.onFile} on file`);
+        } else {
+          setSyncMsg(`${data.onFile} results on file · up to date`);
+        }
       } else if (data.synced > 0) {
         setSyncMsg(`Synced ${data.synced} new result${data.synced === 1 ? "" : "s"}`);
-        await load();
       } else if (data.message) {
         setSyncMsg(data.message);
       } else {
         setSyncMsg("Up to date");
+      }
+      if (Array.isArray(data.warnings) && data.warnings.length) {
+        setSyncWarnings(data.warnings);
       }
     } catch {
       setSyncMsg("Sync unavailable");
     } finally {
       syncingRef.current = false;
       setSyncing(false);
+      await load();
     }
-  }, [admin, load]);
+  }, [load]);
 
-  // Auto-sync on unlock and every 5 minutes while the desk is open
+  useEffect(() => {
+    load();
+  }, [load]);
+
   useEffect(() => {
     if (!admin) return;
     runSync();
@@ -110,7 +151,10 @@ export default function ResultsDesk() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ passcode }),
     });
-    if (!res.ok) { setError("Wrong passcode"); return; }
+    if (!res.ok) {
+      setError("Wrong passcode");
+      return;
+    }
     setAdmin(true);
   }
 
@@ -121,6 +165,11 @@ export default function ResultsDesk() {
     try {
       const res = await fetch("/api/sync-cards", { method: "POST" });
       const data = await res.json();
+      if (res.status === 401) {
+        setAdmin(false);
+        setCardSyncMsg("Session expired — enter the steward passcode again.");
+        return;
+      }
       if (data.error) {
         setCardSyncMsg(`Error: ${data.error}`);
       } else {
@@ -134,15 +183,6 @@ export default function ResultsDesk() {
     }
   }
 
-  async function deleteResult(id: string) {
-    const res = await fetch("/api/results", {
-      method: "DELETE",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id }),
-    });
-    if (res.ok) setResults((prev) => prev.filter((r) => r.id !== id));
-  }
-
   async function toggleOut(team: T) {
     const next = !team.is_out;
     setTeams((prev) => prev.map((t) => (t.id === team.id ? { ...t, is_out: next } : t)));
@@ -153,6 +193,7 @@ export default function ResultsDesk() {
     });
     if (!res.ok) {
       const data = await res.json();
+      if (res.status === 401) setAdmin(false);
       setError(data.error ?? "Update failed");
       load();
     }
@@ -169,6 +210,7 @@ export default function ResultsDesk() {
     });
     if (!res.ok) {
       const data = await res.json();
+      if (res.status === 401) setAdmin(false);
       setError(data.error ?? "Update failed");
       load();
     }
@@ -186,32 +228,6 @@ export default function ResultsDesk() {
     return parts.join(" · ");
   };
 
-  if (!admin) {
-    return (
-      <div className="max-w-sm">
-        <p className="overline">OFFICIAL ENTRY · RESTRICTED</p>
-        <h1 className="display text-5xl" style={{ marginTop: "0.2rem" }}>
-          Results d<span className="intruder">e</span>sk
-        </h1>
-        <p className="mt-4 text-sm" style={{ color: "var(--dim)" }}>
-          Steward passcode required to open the desk.
-        </p>
-        <div className="mt-3 flex gap-2">
-          <input
-            className="field flex-1"
-            type="password"
-            placeholder="Passcode"
-            value={passcode}
-            onChange={(e) => setPasscode(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && login()}
-          />
-          <button className="btn" onClick={login}>Unlock</button>
-        </div>
-        {error && <p className="mt-3 text-sm" style={{ color: "var(--red)" }}>{error}</p>}
-      </div>
-    );
-  }
-
   const bandATeams = teams.filter((t) => t.band === "A");
   const bandBTeams = teams.filter((t) => t.band === "B");
 
@@ -225,8 +241,13 @@ export default function ResultsDesk() {
           <h1 className="display text-5xl" style={{ marginTop: "0.2rem" }}>
             Results d<span className="intruder">e</span>sk
           </h1>
+          <p className="mt-2 text-xs" style={{ color: "var(--dim)" }}>
+            {admin
+              ? "Results sync automatically from the World Cup feed when you open this page, then every five minutes."
+              : "Enter the steward passcode to open the results desk."}
+          </p>
         </div>
-        {syncMsg && (
+        {admin && syncMsg && (
           <div className="flex flex-wrap items-center gap-3">
             <span className="mono text-xs uppercase" style={{ color: "var(--dim)", letterSpacing: "0.06em" }}>
               {syncMsg}
@@ -245,8 +266,40 @@ export default function ResultsDesk() {
 
       {error && <p className="mt-4 text-sm" style={{ color: "var(--red)" }}>{error}</p>}
 
+      {!admin && (
+        <div className="mt-8 max-w-sm">
+          <p className="text-sm" style={{ color: "var(--dim)" }}>
+            Filing, sync, and elimination controls are steward-only. Enter the passcode to unlock the desk.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <input
+              className="field flex-1"
+              type="password"
+              placeholder="Steward passcode"
+              value={passcode}
+              onChange={(e) => setPasscode(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && login()}
+            />
+            <button className="btn" onClick={login}>Unlock</button>
+          </div>
+        </div>
+      )}
+
+      {admin && syncWarnings.length > 0 && (
+        <div className="ruled-box mt-6 max-w-3xl">
+          <p className="ruled-box-label">Sync notes</p>
+          <ul className="mono mt-2 space-y-1 text-xs" style={{ color: "var(--dim)", letterSpacing: "0.04em" }}>
+            {syncWarnings.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {admin && (
+      <>
       <section className="ruled-box mt-8">
-        <p className="ruled-box-label">Form 1 — match result entry</p>
+        <p className="ruled-box-label">Form 1 — filed record</p>
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <h2 className="display text-2xl">Filed results</h2>
           <div className="flex items-center gap-3">
@@ -266,12 +319,11 @@ export default function ResultsDesk() {
           </div>
         </div>
         <p className="mt-2 text-xs" style={{ color: "var(--dim)" }}>
-          Results sync automatically from the live feed every 15 minutes (and while this desk is open).
-          Cards, scores, and opponents are pulled from the API.
+          Every finished match from the feed. Card counts can be pulled from SportAPI if enabled.
         </p>
 
         <ul className="mt-5 space-y-1">
-          {results.map((r) => (
+          {sortedResults.map((r) => (
             <li key={r.id} className="rule-faint flex flex-wrap items-center gap-3 pb-1.5 text-sm">
               <span className="mono text-xs uppercase" style={{ color: "var(--dim)" }}>{r.stage}</span>
               <span>{teamName(r.team_a)}</span>
@@ -283,18 +335,11 @@ export default function ResultsDesk() {
               <span className="mono ml-auto text-xs" style={{ color: "var(--dim)", letterSpacing: "0.06em" }}>
                 FILED {new Date(r.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }).toUpperCase()}
               </span>
-              <button
-                className="text-xs underline"
-                style={{ color: "var(--dim)" }}
-                onClick={() => deleteResult(r.id)}
-              >
-                delete
-              </button>
             </li>
           ))}
           {!results.length && (
             <li className="text-sm" style={{ color: "var(--dim)" }}>
-              No results yet — first whistle is coming.
+              {syncing ? "SETTING THE TYPE…" : "No results on file yet."}
             </li>
           )}
         </ul>
@@ -376,6 +421,8 @@ export default function ResultsDesk() {
           ))}
         </div>
       </section>
+      </>
+      )}
     </div>
   );
 }

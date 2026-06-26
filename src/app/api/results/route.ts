@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/auth";
 import { supaAdmin } from "@/lib/supabase";
-import { isAdmin } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
-  if (!(await isAdmin())) return NextResponse.json({ error: "Not authorised" }, { status: 401 });
+  const denied = await requireAdmin();
+  if (denied) return denied;
   const body = await req.json();
   const {
     team_a, team_b, score_a, score_b,
@@ -35,7 +36,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  if (!(await isAdmin())) return NextResponse.json({ error: "Not authorised" }, { status: 401 });
+  const denied = await requireAdmin();
+  if (denied) return denied;
   const { id } = await req.json();
   const { error } = await supaAdmin().from("results").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });

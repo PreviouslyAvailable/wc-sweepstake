@@ -1,9 +1,8 @@
 import { supaAnon } from "@/lib/supabase";
-import { aggregateTeamScore, formatBreakdownTooltip, Participant, Assignment, Team, Result } from "@/lib/scoring";
-import { formatTipSections } from "@/lib/tooltip-format";
+import { aggregateTeamScore, computeStandings, formatTeamBreakdownTooltip, Participant, Assignment, Team, Result } from "@/lib/scoring";
 import { gamesPlayedForTeam, buildGamesLeftByTeam } from "@/lib/ladder-meta";
 import { fetchWcFixtures } from "@/lib/wc-fixtures";
-import { buildTournamentStatusByTeam } from "@/lib/tournament-status";
+import { buildTournamentStatusByTeam, isTeamEliminated } from "@/lib/tournament-status";
 
 export const dynamic = "force-dynamic";
 
@@ -22,14 +21,11 @@ export default async function WhoHasWho() {
   const results = (r.data ?? []) as Result[];
   const teamById = new Map(teams.map((tm) => [tm.id, tm]));
 
-  const apiKey = process.env.RAPIDAPI_KEY;
   let fixtures: Awaited<ReturnType<typeof fetchWcFixtures>> = [];
-  if (apiKey) {
-    try {
-      fixtures = await fetchWcFixtures(apiKey);
-    } catch {
-      // fixture sheet unavailable — games left will show 0
-    }
+  try {
+    fixtures = await fetchWcFixtures({ results, teams });
+  } catch {
+    // fixture sheet unavailable — games left will show 0
   }
   const gamesLeftByTeam = buildGamesLeftByTeam(fixtures);
   const statusByTeam = buildTournamentStatusByTeam({ teams, results, fixtures });
@@ -63,6 +59,10 @@ export default async function WhoHasWho() {
     })
     .filter(({ stubs }) => stubs.length > 0);
 
+  const standings = computeStandings(participants, assignments, teams, results);
+  const leaderId = standings[0]?.participant.id;
+  const leaderTotal = standings[0]?.total ?? 0;
+
   return (
     <div>
       <p className="overline">
@@ -77,7 +77,9 @@ export default async function WhoHasWho() {
 
       <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {holders.map(({ person, stubs }, i) => {
-          const alive = stubs.filter((tm) => !tm.is_out).length;
+          const alive = stubs.filter((tm) =>
+            !isTeamEliminated(tm, statusByTeam.get(tm.id))
+          ).length;
           const totalPts = stubs.reduce(
             (sum, tm) => sum + aggregateTeamScore(tm.id, teams, results).total,
             0
@@ -85,7 +87,12 @@ export default async function WhoHasWho() {
           return (
             <section key={person.id} className="profile-card">
               <div className="nameplate">
-                <h2 className="nameplate-name">{person.name}</h2>
+                <h2 className="nameplate-name">
+                  {person.name}
+                  {person.id === leaderId && totalPts === leaderTotal && leaderTotal > 0 ? (
+                    <span className="stamp-mark stamp-leader">Leader</span>
+                  ) : null}
+                </h2>
                 <div className="nameplate-meta">
                   <span className="card-no">
                     CARD {String(i + 1).padStart(2, "0")} / {String(holders.length).padStart(2, "0")}
@@ -101,48 +108,37 @@ export default async function WhoHasWho() {
                   const gamesPlayed = gamesPlayedForTeam(team.id, results);
                   const gamesLeft = gamesLeftByTeam.get(team.id) ?? 0;
                   const status = statusByTeam.get(team.id);
-                  const progress = status?.detail || `${gamesPlayed}p · ${team.is_out ? "done" : `${gamesLeft} left`}`;
-                  const tip = status
-                    ? formatTipSections([
-                        { heading: status.label, lines: [status.detail] },
-                        {
-                          lines: [
-                            `Goals: ${breakdown.goals}`,
-                            `Clean sheets: ${breakdown.cleanSheet}`,
-                            `Cards: ${breakdown.cards}`,
-                            breakdown.giantKilling ? `Giant-killing: ${breakdown.giantKilling}` : null,
-                          ],
-                        },
-                      ])
-                    : formatBreakdownTooltip(breakdown);
+                  const eliminated = isTeamEliminated(team, status);
+                  const progress = status?.detail || `${gamesPlayed} played · ${eliminated ? "done" : `${gamesLeft} left`}`;
+                  const tip = formatTeamBreakdownTooltip(team, breakdown);
                   return (
                     <li
                       key={team.id}
-                      className={`stub holder-stub has-tip${team.is_out ? " out" : ""}`}
+                      className={`stub holder-stub has-tip${eliminated ? " out" : ""}`}
                       data-tip={tip}
                       tabIndex={0}
                     >
-                      <span className="holder-stub-flag" aria-hidden>{team.flag}</span>
-                      <div className="holder-stub-body">
-                        <span className="stub-name">{team.name}</span>
-                        <div className="holder-stub-meta">
-                          {status ? (
-                            <span
-                              className={`round-chip${status.secured ? " round-chip-secured" : ""}${status.fate === "bubble" ? " round-chip-bubble" : ""}`}
-                            >
-                              {status.label}
+                      {eliminated ? (
+                        <span className="holder-out-stamp" aria-hidden>OUT</span>
+                      ) : null}
+                      <span className="holder-stub-pts tabular-nums">{pts}</span>
+                      <div className="holder-stub-main">
+                        <span className="holder-stub-flag" aria-hidden>{team.flag}</span>
+                        <div className="holder-stub-body">
+                          <span className="stub-name">{team.name}</span>
+                          <div className="holder-stub-meta">
+                            {status ? (
+                              <span
+                                className={`round-chip${status.fate === "out" ? " round-chip-out" : ""}${status.secured ? " round-chip-secured" : ""}${status.fate === "bubble" ? " round-chip-bubble" : ""}`}
+                              >
+                                {status.label}
+                              </span>
+                            ) : null}
+                            <span className="holder-stub-detail">
+                              {bandLabel} · {progress}
                             </span>
-                          ) : null}
-                          <span className="holder-stub-detail">
-                            {bandLabel} · {progress}
-                          </span>
+                          </div>
                         </div>
-                      </div>
-                      <div className="holder-stub-aside">
-                        {team.is_out ? (
-                          <span className="stamp-mark">Out</span>
-                        ) : null}
-                        <span className="holder-stub-pts tabular-nums">{pts}</span>
                       </div>
                     </li>
                   );

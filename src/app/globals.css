@@ -178,6 +178,32 @@ body {
 }
 .stub.out            { opacity: 0.38; }
 .stub.out .stub-name { text-decoration: line-through; }
+.holder-stub.out {
+  opacity: 1;
+}
+.holder-stub.out .holder-stub-main {
+  opacity: 0.42;
+}
+.holder-stub.out .holder-stub-pts {
+  opacity: 0.55;
+}
+.holder-out-stamp {
+  position: absolute;
+  inset: 0.5rem 0.65rem;
+  z-index: 3;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--vermilion);
+  color: var(--vermilion);
+  font-family: "Anton", "Archivo Black", sans-serif;
+  font-size: clamp(0.95rem, 3vw, 1.35rem);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transform: rotate(-8deg);
+  background: rgba(12, 10, 8, 0.1);
+}
 
 /* ── Stamp entrance — press impression ──────────────
    Arrives instantly. Slight overshoot (1.02→1.00).
@@ -224,6 +250,27 @@ body {
   border-bottom: 1px solid var(--rule);
   padding: 0.75rem 0;
 }
+.unclaimed-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.unclaimed-list .index-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: 0.65rem;
+  flex-wrap: nowrap;
+  width: 100%;
+}
+.unclaimed-list .index-row .display {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .ladder-row {
   display: grid;
   grid-template-columns: 2.2rem minmax(0, 1.35fr) minmax(0, 1.65fr) 3.5rem minmax(4.75rem, auto) 3rem 3.5rem;
@@ -266,6 +313,13 @@ body {
   align-items: center;
   gap: 0.2rem;
 }
+.ladder-team-chip.is-out .ladder-team-out-name {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.04em;
+  color: var(--vermilion);
+  text-transform: uppercase;
+}
 .round-chip,
 .round-chip-sm {
   font-family: "IBM Plex Mono", monospace;
@@ -282,12 +336,21 @@ body {
   line-height: 1;
 }
 .round-chip-secured,
-.round-chip-sm.round-chip-secured {
+.round-chip-sm.round-chip-secured,
+.round-chip-playing,
+.round-chip-sm.round-chip-playing {
   color: var(--yellow);
 }
 .round-chip-bubble,
 .round-chip-sm.round-chip-bubble {
   color: var(--cream);
+}
+.round-chip-out,
+.round-chip-sm.round-chip-out {
+  color: var(--vermilion);
+}
+.team-out-mark {
+  color: var(--vermilion);
 }
 .ladder-fixture {
   display: grid;
@@ -324,6 +387,9 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+.ladder-next.is-out {
+  color: var(--vermilion);
 }
 .ladder-head-fixture > span:nth-child(2) {
   text-align: left;
@@ -382,10 +448,19 @@ body {
   color: var(--dim);
 }
 .fixture-sheet-when {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
   font-size: 0.6rem;
   letter-spacing: 0.06em;
   color: var(--dim);
   white-space: nowrap;
+}
+.fixture-sheet-round {
+  font-size: 0.55rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cream);
 }
 .fixture-sheet-match {
   display: flex;
@@ -440,6 +515,11 @@ body {
   border-radius: 0;
 }
 .stamp-mark.true-up { transform: rotate(2deg); }
+.stamp-mark.stamp-leader {
+  color: var(--yellow);
+  background: var(--black);
+  border-color: var(--yellow);
+}
 
 /* ── Loose hand — deterministic variation ────────────
    The free axis the spec demands: artefacts in a set
@@ -475,6 +555,10 @@ body {
   padding: 0.45rem 0.7rem;
 }
 .nameplate-name {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
   font-family: "Anton", "Archivo Black", sans-serif;
   font-weight: 400;
   font-size: 1rem;
@@ -495,12 +579,17 @@ body {
   gap: 0.55rem;
 }
 .holder-stub {
+  position: relative;
+  display: block;
+  padding: 0.55rem 0.65rem 0.55rem 0.9rem;
+  min-height: 3.1rem;
+}
+.holder-stub-main {
   display: grid;
-  grid-template-columns: 1.35rem minmax(0, 1fr) auto;
-  align-items: center;
+  grid-template-columns: 1.35rem minmax(0, 1fr);
+  align-items: start;
   column-gap: 0.65rem;
-  padding-top: 0.5rem;
-  padding-bottom: 0.5rem;
+  padding-right: 2.1rem;
 }
 .holder-stub-flag {
   font-size: 1.05rem;
@@ -529,14 +618,11 @@ body {
   letter-spacing: 0.04em;
   color: var(--dim);
 }
-.holder-stub-aside {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.25rem;
-  min-width: 2.5rem;
-}
 .holder-stub-pts {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.55rem;
+  z-index: 2;
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.82rem;
   font-weight: 600;
@@ -956,7 +1042,7 @@ select:focus-visible {
   z-index: 30;
   bottom: calc(100% + 0.35rem);
   left: 0;
-  padding: 0.5rem 0.65rem;
+  padding: 0.65rem 0.8rem;
   border: 1px solid var(--cream-18);
   background: var(--surface-raised);
   color: var(--cream-50);
@@ -964,10 +1050,10 @@ select:focus-visible {
   font-size: 0.56rem;
   font-weight: 400;
   letter-spacing: 0.04em;
-  line-height: 1.55;
+  line-height: 1.7;
   white-space: pre-line;
   width: max-content;
-  max-width: min(24rem, 90vw);
+  max-width: min(26rem, 90vw);
   text-align: left;
   pointer-events: none;
   opacity: 0;

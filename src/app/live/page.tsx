@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { fmtFixtureDate, fmtFixtureKickoff } from "@/lib/match-dates";
+import { formatPtsBreakdownLines } from "@/lib/scoring";
 import { formatTipSections } from "@/lib/tooltip-format";
 
 interface Breakdown {
@@ -25,19 +26,6 @@ interface TeamSide {
   breakdown: Breakdown;
 }
 
-function fmtBreakdownLines(bd: Breakdown): string[] {
-  const lines: string[] = [`Goals: +${bd.goals}`];
-  if (bd.cleanSheet) lines.push(`Clean sheet: +${bd.cleanSheet}`);
-  if (bd.yellows || bd.reds) {
-    const cardParts = [];
-    if (bd.yellows) cardParts.push(`${bd.yellows}Y`);
-    if (bd.reds) cardParts.push(`${bd.reds}R`);
-    lines.push(`Cards: ${cardParts.join(" ")} (+${bd.cards})`);
-  }
-  if (bd.giantKilling) lines.push(`Giant-kill: +${bd.giantKilling}`);
-  return lines;
-}
-
 function fmtMatchTooltip(match: Match): string | null {
   const showScore = match.status === "inprogress" || match.status === "finished";
   if (!showScore) return null;
@@ -46,13 +34,21 @@ function fmtMatchTooltip(match: Match): string | null {
   if (match.home.owner) {
     sections.push({
       heading: `${match.home.flag} ${match.home.name} (+${match.home.pts})`,
-      lines: fmtBreakdownLines(match.home.breakdown),
+      lines: formatPtsBreakdownLines(match.home.breakdown, {
+        yellows: match.home.breakdown.yellows,
+        reds: match.home.breakdown.reds,
+        signed: true,
+      }),
     });
   }
   if (match.away.owner) {
     sections.push({
       heading: `${match.away.flag} ${match.away.name} (+${match.away.pts})`,
-      lines: fmtBreakdownLines(match.away.breakdown),
+      lines: formatPtsBreakdownLines(match.away.breakdown, {
+        yellows: match.away.breakdown.yellows,
+        reds: match.away.breakdown.reds,
+        signed: true,
+      }),
     });
   }
   return sections.length ? formatTipSections(sections) : null;
@@ -62,7 +58,6 @@ const CARD_STYLE: React.CSSProperties = {
   display: "inline-block",
   width: "5px",
   height: "8px",
-  borderRadius: "1px",
 };
 
 function MatchCards({ yellows, reds }: { yellows: number; reds: number }) {
@@ -190,12 +185,12 @@ function MatchCard({ match }: { match: Match }) {
                 <span className="match-score-sep">–</span>
                 <span className={`match-score-num${homeWins ? " dim" : ""}`}>{match.away.score}</span>
               </div>
-              <span className="match-center-date">{fmtFixtureDate(match.startTimestamp)}</span>
+              <span className="match-center-date">{fmtFixtureDate(match.startTimestamp)} NZST</span>
             </>
           ) : (
             <div className="match-kickoff-block">
               <span className="match-kickoff-time">{fmtFixtureKickoff(match.startTimestamp)}</span>
-              <span className="match-center-date">{fmtFixtureDate(match.startTimestamp)}</span>
+              <span className="match-center-date">{fmtFixtureDate(match.startTimestamp)} NZST</span>
               <span className="match-kickoff-vs">KO</span>
             </div>
           )}

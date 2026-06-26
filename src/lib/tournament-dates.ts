@@ -19,6 +19,18 @@ export function liveFixtureDates(now = new Date()): string[] {
   return dateRange(WC_START, fmt(tomorrow));
 }
 
+/** Live page — 7-day lookback for result stubs plus 14-day fixture lookahead. */
+export function livePageFixtureDates(now = new Date()): string[] {
+  const fmt = (d: Date) => d.toISOString().split("T")[0];
+  const lookback = new Date(now);
+  lookback.setDate(lookback.getDate() - 7);
+  const from = fmt(lookback) < WC_START ? WC_START : fmt(lookback);
+  const horizon = new Date(now);
+  horizon.setDate(horizon.getDate() + 14);
+  const to = fmt(horizon) > WC_END ? WC_END : fmt(horizon);
+  return dateRange(from, to);
+}
+
 /** Today through 14 days ahead (capped at tournament end) — next-fixture lookahead. */
 export function nextFixtureDates(now = new Date()): string[] {
   const fmt = (d: Date) => d.toISOString().split("T")[0];
