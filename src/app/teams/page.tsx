@@ -28,7 +28,7 @@ export default async function WhoHasWho() {
   } catch {
     // fixture sheet unavailable — games left will show 0
   }
-  const gamesLeftByTeam = buildGamesLeftByTeam(fixtures);
+  const gamesLeftByTeam = buildGamesLeftByTeam(fixtures, results);
   const statusByTeam = buildTournamentStatusByTeam({ teams, results, fixtures });
 
   const issued = fmtIssuedDate();

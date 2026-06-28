@@ -375,26 +375,28 @@ export function analyzeGroupFate(
     }
   }
 
-  // Locked 4th — fourth place never advances.
-  const teamsAheadOnMin = teamIds.filter(
-    (id) => id !== teamId && myMax < statsMap.get(id)!.points
+  // Locked 4th — three rivals already above our best possible total.
+  const teamsGuaranteedAbove = teamIds.filter(
+    (id) => id !== teamId && statsMap.get(id)!.points > myMax
   ).length;
-  if (teamsAheadOnMin >= 2) {
+  if (teamsGuaranteedAbove >= 3) {
     return { kind: "eliminated", position, maxPosition: 4 };
   }
 
-  // Can still finish top 2?
-  let canTopTwo = false;
-  for (const id of teamIds) {
-    if (id === teamId) continue;
-    const otherMax = maxPoints(statsMap.get(id)!);
-    if (otherMax > myStats.points) canTopTwo = true;
-    else if (otherMax === myStats.points && ordered.indexOf(id) >= position) canTopTwo = true;
-  }
-  if (position <= 2 && myMax >= myStats.points) canTopTwo = true;
-
-  if (canTopTwo || position <= 2) {
+  // Still fighting for a top-two finish (including 3rd on the table who can overtake 2nd).
+  if (position <= 2) {
     return { kind: "in_race", position, maxPosition: Math.min(position, 2) };
+  }
+
+  const secondId = ordered[1];
+  if (
+    secondId &&
+    secondId !== teamId &&
+    (myMax > statsMap.get(secondId)!.points ||
+      (myMax === statsMap.get(secondId)!.points &&
+        ordered.indexOf(teamId) < ordered.indexOf(secondId)))
+  ) {
+    return { kind: "in_race", position, maxPosition: 2 };
   }
 
   // Third-place race

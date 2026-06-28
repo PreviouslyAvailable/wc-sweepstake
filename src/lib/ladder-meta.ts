@@ -11,6 +11,7 @@ import type { WcFixture } from "@/lib/wc-fixtures";
 import type { TeamTournamentStatus } from "@/lib/tournament-status";
 import { isTeamEliminated } from "@/lib/tournament-status";
 import { isGroupRoundName } from "@/lib/tournament-rounds";
+import { groupMatchesRemaining } from "@/lib/group-standings";
 
 export interface TeamNextFixture {
   teamFlag: string;
@@ -69,19 +70,22 @@ function fixtureForTeam(
   };
 }
 
-export function buildGamesLeftByTeam(fixtures: WcFixture[]): Map<string, number> {
+export function buildGamesLeftByTeam(
+  fixtures: WcFixture[],
+  results: Result[] = []
+): Map<string, number> {
   const remaining = fixtures.filter(
     (f) => f.status === "notstarted" || f.status === "inprogress"
   );
-  // During the group stage, only count group-stage fixtures so that already-scheduled
-  // knockout games (where teams have clinched their spot) don't inflate the count.
-  // Once no group-stage games remain, fall back to all remaining fixtures.
-  const groupStage = remaining.filter((f) => isGroupRoundName(f.roundName));
-  const toCount = groupStage.length > 0 ? groupStage : remaining;
   const counts = new Map<string, number>();
-  for (const f of toCount) {
+  for (const f of remaining) {
+    const isGroup = isGroupRoundName(f.roundName);
     for (const teamId of [f.homeId, f.awayId]) {
       if (!teamId) continue;
+      const groupOpen = groupMatchesRemaining(teamId, results) > 0;
+      // Per team: still in the group stage → only group fixtures; otherwise knockouts too.
+      if (groupOpen && !isGroup) continue;
+      if (!groupOpen && isGroup) continue;
       counts.set(teamId, (counts.get(teamId) ?? 0) + 1);
     }
   }

@@ -73,7 +73,7 @@ export default async function Ladder() {
   }
   const ownerByTeamId = buildOwnerByTeamId(assignments, participants);
   const nextByTeam = buildNextFixtureByTeam(fixtures, ownerByTeamId, teamById);
-  const gamesLeftByTeam = buildGamesLeftByTeam(fixtures);
+  const gamesLeftByTeam = buildGamesLeftByTeam(fixtures, results);
   const statusByTeam = buildTournamentStatusByTeam({ teams, results, fixtures });
 
   const issued = fmtIssuedDate();

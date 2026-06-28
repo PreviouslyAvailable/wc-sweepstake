@@ -50,9 +50,12 @@ function qualifyingThirdGroupLetters(
   results: Result[],
   worldRanks: Map<string, number>
 ): Set<string> | null {
-  if (!allGroupStagesComplete(results)) return null;
   const table = buildThirdPlaceTable(results, worldRanks);
-  return new Set(table.slice(0, 8).map((r) => r.groupLetter));
+  const top8 = table.slice(0, 8);
+  if (top8.length < 8) return null;
+  // Use the current top-eight third-place groups even while one group is still
+  // playing — bracket slots update once the final group result locks the annex row.
+  return new Set(top8.map((r) => r.groupLetter));
 }
 
 export function thirdPlaceTeamForWinnerGroup(
@@ -102,25 +105,25 @@ export function resolveKnockoutSlot(
   label: string | undefined,
   ctx: ResolveKnockoutContext
 ): string | null {
+  if (label) {
+    const slot = parseBracketSlot(label);
+    if (slot) {
+      let resolved: string | null = null;
+      if (slot.kind === "winner") {
+        resolved = teamAtGroupPosition(slot.group, 1, ctx.results, ctx.worldRanks);
+      } else if (slot.kind === "runner_up") {
+        resolved = teamAtGroupPosition(slot.group, 2, ctx.results, ctx.worldRanks);
+      } else if (slot.kind === "third" && ctx.opponentWinnerGroup) {
+        resolved = thirdPlaceTeamForWinnerGroup(
+          ctx.opponentWinnerGroup,
+          ctx.results,
+          ctx.worldRanks
+        );
+      }
+      if (resolved) return resolved;
+    }
+  }
   if (nameEn && NAME_TO_ID[nameEn]) return NAME_TO_ID[nameEn];
-  if (!label) return null;
-
-  const slot = parseBracketSlot(label);
-  if (!slot) return null;
-
-  if (slot.kind === "winner") {
-    return teamAtGroupPosition(slot.group, 1, ctx.results, ctx.worldRanks);
-  }
-  if (slot.kind === "runner_up") {
-    return teamAtGroupPosition(slot.group, 2, ctx.results, ctx.worldRanks);
-  }
-  if (slot.kind === "third" && ctx.opponentWinnerGroup) {
-    return thirdPlaceTeamForWinnerGroup(
-      ctx.opponentWinnerGroup,
-      ctx.results,
-      ctx.worldRanks
-    );
-  }
   return null;
 }
 
