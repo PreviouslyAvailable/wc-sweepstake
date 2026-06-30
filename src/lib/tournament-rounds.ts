@@ -34,6 +34,12 @@ export function nextKnockoutRound(round: TournamentRound): TournamentRound | nul
   return ROUND_ORDER[i + 1] ?? null;
 }
 
+export function previousKnockoutRound(round: TournamentRound): TournamentRound {
+  const i = roundIndex(round);
+  if (i <= roundIndex("r32")) return "group";
+  return ROUND_ORDER[i - 1] ?? "group";
+}
+
 /** Parse SportAPI round / tournament names into our stage slug. */
 export function roundFromName(name: string): TournamentRound {
   const n = name.toLowerCase().trim();

@@ -16,8 +16,10 @@ import {
   maxRound,
   nextKnockoutRound,
   parseFurthestRound,
+  previousKnockoutRound,
   roundDisplayLabel,
   roundFromName,
+  roundIndex,
   roundShortLabel,
   type TournamentRound,
 } from "@/lib/tournament-rounds";
@@ -78,11 +80,12 @@ function fixtureSecuredRound(
     .filter((r) => r !== "group");
 
   if (!knockoutRounds.length) return null;
-  return knockoutRounds.sort(
-    (a, b) =>
-      ["group", "r32", "r16", "qf", "sf", "third", "final"].indexOf(a) -
-      ["group", "r32", "r16", "qf", "sf", "third", "final"].indexOf(b)
-  )[0];
+
+  const earliest = knockoutRounds.sort((a, b) => roundIndex(a) - roundIndex(b))[0];
+  const prev = previousKnockoutRound(earliest);
+  if (prev === "group") return earliest;
+  if (wonKnockoutRound(teamId, prev, results)) return earliest;
+  return null;
 }
 
 function playingRoundFromFixtures(

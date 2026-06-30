@@ -9,6 +9,7 @@ import {
   noteWithPenWinner,
   penWinnerFromSportEvent,
   penWinnerFromWc26Scores,
+  penWinnerFromWorldCup26Game,
 } from "@/lib/knockout-result";
 import { getLockedResultPairs } from "@/lib/steward-overrides";
 import { WC_START, dateRange } from "@/lib/tournament-dates";
@@ -310,14 +311,16 @@ export async function syncResultsFromWorldCup26(
     const keyed = fixturePairKey(homeId, awayId);
     const filedRow = byNote.get(note) ?? byPair.get(keyed);
 
-    const penWinner = penWinnerFromWc26Scores(
-      homeId,
-      awayId,
-      scoreA,
-      scoreB,
-      stage,
-      game.time_elapsed ?? ""
-    );
+    const penWinner =
+      penWinnerFromWorldCup26Game(game, homeId, awayId) ??
+      penWinnerFromWc26Scores(
+        homeId,
+        awayId,
+        scoreA,
+        scoreB,
+        stage,
+        game.time_elapsed ?? ""
+      );
     const noteWithPen = penWinner ? noteWithPenWinner(note, penWinner) : note;
 
     if (filedRow) {

@@ -1,5 +1,6 @@
 import type { Result } from "@/lib/scoring";
 import type { SportEvent } from "@/lib/sportapi-events";
+import type { WorldCup26Game } from "@/lib/worldcup26";
 import { parseFurthestRound, type TournamentRound } from "@/lib/tournament-rounds";
 
 const PEN_WINNER_RE = /\|pen:([A-Z]{3})/;
@@ -78,6 +79,23 @@ export function penWinnerFromSportEvent(
     if (awayPen > homePen) return awayId;
   }
   return null;
+}
+
+/** WC26 feed: explicit penalty shootout scores on the game object. */
+export function penWinnerFromWorldCup26Game(
+  game: WorldCup26Game,
+  homeId: string,
+  awayId: string
+): string | null {
+  const homePen = game.home_penalty_score;
+  const awayPen = game.away_penalty_score;
+  if (homePen == null || awayPen == null || homePen === "" || awayPen === "") {
+    return null;
+  }
+  const h = Number(homePen);
+  const a = Number(awayPen);
+  if (!Number.isFinite(h) || !Number.isFinite(a) || h === a) return null;
+  return h > a ? homeId : awayId;
 }
 
 /** WC26 feed: higher score after level FT in knockout often means pen winner (feed-dependent). */
